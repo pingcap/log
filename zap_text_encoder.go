@@ -46,7 +46,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// DefaultTimeEncoder serializes a time.Time to an human-readable formatted string
+// DefaultTimeEncoder serializes time.Time to a human-readable formatted string
 func DefaultTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
 	s := t.Format("2006/01/02 15:04:05.000 -07:00")
 	if e, ok := enc.(*textEncoder); ok {
