@@ -13,7 +13,10 @@
 
 package log
 
-import "go.uber.org/zap"
+import (
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
 
 // Info logs a message at InfoLevel. The message includes any fields passed
 // at the log site, as well as any fields accumulated on the logger.
@@ -48,4 +51,11 @@ func Panic(msg string, fields ...zap.Field) {
 // disabled.
 func Fatal(msg string, fields ...zap.Field) {
 	L().Fatal(msg, fields...)
+}
+
+// SetLevel alters the logging level.
+func SetLevel(l zapcore.Level) {
+	_globalMu.Lock()
+	defer _globalMu.Unlock()
+	_globalR.Level.SetLevel(l)
 }

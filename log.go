@@ -24,7 +24,7 @@ import (
 )
 
 // InitLogger initializes a zap logger.
-func InitLogger(cfg *Config) (*zap.Logger, zapcore.WriteSyncer, error) {
+func InitLogger(cfg *Config) (*zap.Logger, *ZapRecord, error) {
 	var output zapcore.WriteSyncer
 	if len(cfg.File.Filename) > 0 {
 		lg, err := initFileLog(&cfg.File)
@@ -47,8 +47,12 @@ func InitLogger(cfg *Config) (*zap.Logger, zapcore.WriteSyncer, error) {
 	}
 	core := zapcore.NewCore(newZapTextEncoder(cfg), output, level)
 	lg := zap.New(core, cfg.buildOptions(output)...)
-
-	return lg, output, nil
+	r := &ZapRecord{
+		Core:   core,
+		Syncer: output,
+		Level:  level,
+	}
+	return lg, r, nil
 }
 
 // initFileLog initializes file based logging options.
@@ -72,16 +76,16 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 	}, nil
 }
 
-func newStdLogger() *zap.Logger {
+func newStdLogger() (*zap.Logger, *ZapRecord) {
 	conf := &Config{Level: "info", File: FileLogConfig{}}
-	lg, _, _ := InitLogger(conf)
-	return lg
+	lg, r, _ := InitLogger(conf)
+	return lg, r
 }
 
 var (
-	_globalMu sync.RWMutex
-	_globalL  = newStdLogger()
-	_globalS  = _globalL.Sugar()
+	_globalMu          sync.RWMutex
+	_globalL, _globalR = newStdLogger()
+	_globalS           = _globalL.Sugar()
 )
 
 // L returns the global Logger, which can be reconfigured with ReplaceGlobals.
@@ -104,11 +108,22 @@ func S() *zap.SugaredLogger {
 
 // ReplaceGlobals replaces the global Logger and SugaredLogger, and returns a
 // function to restore the original values. It's safe for concurrent use.
-func ReplaceGlobals(logger *zap.Logger) func() {
+func ReplaceGlobals(logger *zap.Logger, record *ZapRecord) func() {
 	_globalMu.Lock()
 	prev := _globalL
+	prer := _globalR
 	_globalL = logger
 	_globalS = logger.Sugar()
+	_globalR = record
 	_globalMu.Unlock()
-	return func() { ReplaceGlobals(prev) }
+	return func() { ReplaceGlobals(prev, prer) }
+}
+
+// Sync flushes any buffered log entries.
+func Sync() error {
+	err := L().Sync()
+	if err != nil {
+		return err
+	}
+	return S().Sync()
 }

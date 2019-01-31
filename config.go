@@ -66,6 +66,13 @@ type Config struct {
 	Sampling *zap.SamplingConfig `toml:"sampling" json:"sampling"`
 }
 
+// ZapRecord records some information about zap.
+type ZapRecord struct {
+	Core   zapcore.Core
+	Syncer zapcore.WriteSyncer
+	Level  zap.AtomicLevel
+}
+
 func newZapTextEncoder(cfg *Config) zapcore.Encoder {
 	cc := zapcore.EncoderConfig{
 		// Keys can be anything except the empty string.
