@@ -59,3 +59,10 @@ func SetLevel(l zapcore.Level) {
 	defer _globalMu.Unlock()
 	_globalR.Level.SetLevel(l)
 }
+
+// GetLevel gets the logging level.
+func GetLevel() zapcore.Level {
+	_globalMu.RLock()
+	defer _globalMu.RUnlock()
+	return _globalR.Level.Level()
+}
