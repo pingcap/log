@@ -66,8 +66,8 @@ type Config struct {
 	Sampling *zap.SamplingConfig `toml:"sampling" json:"sampling"`
 }
 
-// ZapRecord records some information about zap.
-type ZapRecord struct {
+// ZapProperties records some information about zap.
+type ZapProperties struct {
 	Core   zapcore.Core
 	Syncer zapcore.WriteSyncer
 	Level  zap.AtomicLevel

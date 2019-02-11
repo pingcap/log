@@ -55,14 +55,10 @@ func Fatal(msg string, fields ...zap.Field) {
 
 // SetLevel alters the logging level.
 func SetLevel(l zapcore.Level) {
-	_globalMu.Lock()
-	defer _globalMu.Unlock()
-	_globalR.Level.SetLevel(l)
+	_globalP.Level.SetLevel(l)
 }
 
 // GetLevel gets the logging level.
 func GetLevel() zapcore.Level {
-	_globalMu.RLock()
-	defer _globalMu.RUnlock()
-	return _globalR.Level.Level()
+	return _globalP.Level.Level()
 }
