@@ -23,7 +23,7 @@ import (
 )
 
 // InitLogger initializes a zap logger.
-func InitLogger(cfg *Config) (*zap.Logger, *ZapProperties, error) {
+func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
 	var output zapcore.WriteSyncer
 	if len(cfg.File.Filename) > 0 {
 		lg, err := initFileLog(&cfg.File)
@@ -45,7 +45,8 @@ func InitLogger(cfg *Config) (*zap.Logger, *ZapProperties, error) {
 		return nil, nil, err
 	}
 	core := zapcore.NewCore(newZapTextEncoder(cfg), output, level)
-	lg := zap.New(core, cfg.buildOptions(output)...)
+	opts = append(opts, cfg.buildOptions(output)...)
+	lg := zap.New(core, opts...)
 	r := &ZapProperties{
 		Core:   core,
 		Syncer: output,
