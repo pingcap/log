@@ -16,7 +16,6 @@ package log
 import (
 	"errors"
 	"os"
-	"sync"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -24,7 +23,7 @@ import (
 )
 
 // InitLogger initializes a zap logger.
-func InitLogger(cfg *Config) (*zap.Logger, zapcore.WriteSyncer, error) {
+func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
 	var output zapcore.WriteSyncer
 	if len(cfg.File.Filename) > 0 {
 		lg, err := initFileLog(&cfg.File)
@@ -46,9 +45,14 @@ func InitLogger(cfg *Config) (*zap.Logger, zapcore.WriteSyncer, error) {
 		return nil, nil, err
 	}
 	core := zapcore.NewCore(newZapTextEncoder(cfg), output, level)
-	lg := zap.New(core, cfg.buildOptions(output)...)
-
-	return lg, output, nil
+	opts = append(opts, cfg.buildOptions(output)...)
+	lg := zap.New(core, opts...)
+	r := &ZapProperties{
+		Core:   core,
+		Syncer: output,
+		Level:  level,
+	}
+	return lg, r, nil
 }
 
 // initFileLog initializes file based logging options.
@@ -72,43 +76,42 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 	}, nil
 }
 
-func newStdLogger() *zap.Logger {
+func newStdLogger() (*zap.Logger, *ZapProperties) {
 	conf := &Config{Level: "info", File: FileLogConfig{}}
-	lg, _, _ := InitLogger(conf)
-	return lg
+	lg, r, _ := InitLogger(conf)
+	return lg, r
 }
 
 var (
-	_globalMu sync.RWMutex
-	_globalL  = newStdLogger()
-	_globalS  = _globalL.Sugar()
+	_globalL, _globalP = newStdLogger()
+	_globalS           = _globalL.Sugar()
 )
 
 // L returns the global Logger, which can be reconfigured with ReplaceGlobals.
 // It's safe for concurrent use.
 func L() *zap.Logger {
-	_globalMu.RLock()
-	l := _globalL
-	_globalMu.RUnlock()
-	return l
+	return _globalL
 }
 
 // S returns the global SugaredLogger, which can be reconfigured with
 // ReplaceGlobals. It's safe for concurrent use.
 func S() *zap.SugaredLogger {
-	_globalMu.RLock()
-	s := _globalS
-	_globalMu.RUnlock()
-	return s
+	return _globalS
 }
 
-// ReplaceGlobals replaces the global Logger and SugaredLogger, and returns a
-// function to restore the original values. It's safe for concurrent use.
-func ReplaceGlobals(logger *zap.Logger) func() {
-	_globalMu.Lock()
-	prev := _globalL
+// ReplaceGlobals replaces the global Logger and SugaredLogger.
+// It's unsafe for concurrent use.
+func ReplaceGlobals(logger *zap.Logger, props *ZapProperties) {
 	_globalL = logger
 	_globalS = logger.Sugar()
-	_globalMu.Unlock()
-	return func() { ReplaceGlobals(prev) }
+	_globalP = props
+}
+
+// Sync flushes any buffered log entries.
+func Sync() error {
+	err := L().Sync()
+	if err != nil {
+		return err
+	}
+	return S().Sync()
 }

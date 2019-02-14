@@ -20,6 +20,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
@@ -67,6 +68,12 @@ type verifyLogger struct {
 func (v *verifyLogger) AssertMessage(msg ...string) {
 	for i, m := range msg {
 		v.w.c.Assert(m, Equals, v.w.messages[i])
+	}
+}
+
+func (v *verifyLogger) AssertContains(substr string) {
+	for _, m := range v.w.messages {
+		v.w.c.Assert(strings.Contains(m, substr), IsTrue)
 	}
 }
 
