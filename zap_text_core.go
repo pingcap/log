@@ -34,7 +34,7 @@ type textIOCore struct {
 
 func (c *textIOCore) With(fields []zapcore.Field) zapcore.Core {
 	clone := c.clone()
-	// it's different to ioCore, here call textEncoder#addFields to fix https://github.com/pingcap/log/pull/4
+	// it's different to ioCore, here call textEncoder#addFields to fix https://github.com/pingcap/log/issues/3
 	clone.enc.addFields(fields)
 	return clone
 }

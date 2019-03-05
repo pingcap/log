@@ -431,7 +431,7 @@ func (enc *textEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.Field) (
 		final.endQuoteFiled()
 	}
 	if enc.buf.Len() > 0 {
-		final.addElementSeparator()
+		final.buf.AppendByte(' ')
 		final.buf.Write(enc.buf.Bytes())
 	}
 	final.addFields(fields)

@@ -170,7 +170,7 @@ func (t *testZapLogSuite) TestLog(c *C) {
 		`[INFO] [zap_log_test.go:127] [欢迎]`,
 		`[INFO] [zap_log_test.go:128] ["欢迎来到 TiDB"]`,
 		`[WARN] [zap_log_test.go:129] [Type] [Counter=NaN] [Score=+Inf]`,
-		`[INFO] [zap_log_test.go:133] ["new connection"],[connID=1] [traceID=dse1121]`,
+		`[INFO] [zap_log_test.go:133] ["new connection"] [connID=1] [traceID=dse1121]`,
 		`[INFO] [zap_log_test.go:134] ["Testing typs"] [filed1=noquote] `+
 			`[filed2="in quote"] [urls="[http://mock1.com:2347,http://mock2.com:2432]"] `+
 			`[urls-peer="[t1,\"t2 fine\"]"] ["store ids"="[1,4,5]"] [object="{username=user1}"] `+
