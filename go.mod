@@ -11,3 +11,5 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v2 v2.2.2 // indirect
 )
+
+replace go.uber.org/zap => github.com/lysu/zap v1.9.2-0.20190305025310-c7d6dbad4a49

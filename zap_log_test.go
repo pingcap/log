@@ -77,6 +77,14 @@ func (v *verifyLogger) AssertContains(substr string) {
 	}
 }
 
+func (v *verifyLogger) With(fields ...zap.Field) verifyLogger {
+	newLg := v.Logger.With(fields...)
+	return verifyLogger{
+		Logger: newLg,
+		w:      v.w,
+	}
+}
+
 func newZapTestLogger(cfg *Config, c *C) verifyLogger {
 	writer := newTestingWriter(c)
 	opt := cfg.buildOptions(writer)
@@ -122,6 +130,7 @@ func (t *testZapLogSuite) TestLog(c *C) {
 		"Counter", math.NaN(),
 		"Score", math.Inf(1),
 	)
+	lg.With(zap.String("connID", "1"), zap.String("traceID", "dse1121")).Info("new connection")
 	lg.Info("Testing typs",
 		zap.String("filed1", "noquote"),
 		zap.String("filed2", "in quote"),
@@ -153,15 +162,16 @@ func (t *testZapLogSuite) TestLog(c *C) {
 		zap.Duration("duration", 10*time.Second),
 	)
 	lg.AssertMessage(
-		`[INFO] [zap_log_test.go:98] ["failed to fetch URL"] [url=http://example.com] [attempt=3] [backoff=1s]`,
-		`[INFO] [zap_log_test.go:103] ["failed to \"fetch\" [URL]: http://example.com"]`,
-		`[DEBUG] [zap_log_test.go:104] ["Slow query"] [sql="SELECT * FROM TABLE\n\tWHERE ID=\"abc\""] [duration=1.3s] ["process keys"=1500]`,
-		`[INFO] [zap_log_test.go:110] [Welcome]`,
-		`[INFO] [zap_log_test.go:111] ["Welcome TiDB"]`,
-		`[INFO] [zap_log_test.go:112] [欢迎]`,
-		`[INFO] [zap_log_test.go:113] ["欢迎来到 TiDB"]`,
-		`[WARN] [zap_log_test.go:114] [Type] [Counter=NaN] [Score=+Inf]`,
-		`[INFO] [zap_log_test.go:118] ["Testing typs"] [filed1=noquote] `+
+		`[INFO] [zap_log_test.go:113] ["failed to fetch URL"] [url=http://example.com] [attempt=3] [backoff=1s]`,
+		`[INFO] [zap_log_test.go:118] ["failed to \"fetch\" [URL]: http://example.com"]`,
+		`[DEBUG] [zap_log_test.go:119] ["Slow query"] [sql="SELECT * FROM TABLE\n\tWHERE ID=\"abc\""] [duration=1.3s] ["process keys"=1500]`,
+		`[INFO] [zap_log_test.go:125] [Welcome]`,
+		`[INFO] [zap_log_test.go:126] ["Welcome TiDB"]`,
+		`[INFO] [zap_log_test.go:127] [欢迎]`,
+		`[INFO] [zap_log_test.go:128] ["欢迎来到 TiDB"]`,
+		`[WARN] [zap_log_test.go:129] [Type] [Counter=NaN] [Score=+Inf]`,
+		`[INFO] [zap_log_test.go:133] ["new connection"],[connID=1] [traceID=dse1121]`,
+		`[INFO] [zap_log_test.go:134] ["Testing typs"] [filed1=noquote] `+
 			`[filed2="in quote"] [urls="[http://mock1.com:2347,http://mock2.com:2432]"] `+
 			`[urls-peer="[t1,\"t2 fine\"]"] ["store ids"="[1,4,5]"] [object="{username=user1}"] `+
 			`[object2="{username=\"user 2\"}"] [binary="YWIxMjM="] ["is processed"=true] `+
