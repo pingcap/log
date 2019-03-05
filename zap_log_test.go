@@ -91,7 +91,7 @@ func newZapTestLogger(cfg *Config, c *C) verifyLogger {
 	level := zap.NewAtomicLevel()
 	err := level.UnmarshalText([]byte(cfg.Level))
 	c.Assert(err, IsNil)
-	lg := zap.New(zapcore.NewCore(newZapTextEncoder(cfg), writer, level), opt...)
+	lg := zap.New(NewTextCore(newZapTextEncoder(cfg).(*textEncoder), writer, level), opt...)
 	return verifyLogger{
 		Logger: lg,
 		w:      writer,

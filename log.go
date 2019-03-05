@@ -44,7 +44,7 @@ func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, e
 	if err != nil {
 		return nil, nil, err
 	}
-	core := zapcore.NewCore(newZapTextEncoder(cfg), output, level)
+	core := NewTextCore(newZapTextEncoder(cfg).(*textEncoder), output, level)
 	opts = append(opts, cfg.buildOptions(output)...)
 	lg := zap.New(core, opts...)
 	r := &ZapProperties{

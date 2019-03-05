@@ -434,7 +434,7 @@ func (enc *textEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.Field) (
 		final.addElementSeparator()
 		final.buf.Write(enc.buf.Bytes())
 	}
-	final.AddFields(fields)
+	final.addFields(fields)
 	final.closeOpenNamespaces()
 	if ent.Stack != "" && final.StacktraceKey != "" {
 		final.beginQuoteFiled()
@@ -599,7 +599,7 @@ func (enc *textEncoder) tryAddRuneError(r rune, size int) bool {
 	return false
 }
 
-func (enc *textEncoder) AddFields(fields []zapcore.Field) {
+func (enc *textEncoder) addFields(fields []zapcore.Field) {
 	for i := range fields {
 		enc.beginQuoteFiled()
 		fields[i].AddTo(enc)
