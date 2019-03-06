@@ -26,6 +26,7 @@ import (
 	"unsafe"
 
 	. "github.com/pingcap/check"
+	"github.com/pingcap/errors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -162,16 +163,16 @@ func (t *testZapLogSuite) TestLog(c *C) {
 		zap.Duration("duration", 10*time.Second),
 	)
 	lg.AssertMessage(
-		`[INFO] [zap_log_test.go:113] ["failed to fetch URL"] [url=http://example.com] [attempt=3] [backoff=1s]`,
-		`[INFO] [zap_log_test.go:118] ["failed to \"fetch\" [URL]: http://example.com"]`,
-		`[DEBUG] [zap_log_test.go:119] ["Slow query"] [sql="SELECT * FROM TABLE\n\tWHERE ID=\"abc\""] [duration=1.3s] ["process keys"=1500]`,
-		`[INFO] [zap_log_test.go:125] [Welcome]`,
-		`[INFO] [zap_log_test.go:126] ["Welcome TiDB"]`,
-		`[INFO] [zap_log_test.go:127] [欢迎]`,
-		`[INFO] [zap_log_test.go:128] ["欢迎来到 TiDB"]`,
-		`[WARN] [zap_log_test.go:129] [Type] [Counter=NaN] [Score=+Inf]`,
-		`[INFO] [zap_log_test.go:133] ["new connection"] [connID=1] [traceID=dse1121]`,
-		`[INFO] [zap_log_test.go:134] ["Testing typs"] [filed1=noquote] `+
+		`[INFO] [zap_log_test.go:114] ["failed to fetch URL"] [url=http://example.com] [attempt=3] [backoff=1s]`,
+		`[INFO] [zap_log_test.go:119] ["failed to \"fetch\" [URL]: http://example.com"]`,
+		`[DEBUG] [zap_log_test.go:120] ["Slow query"] [sql="SELECT * FROM TABLE\n\tWHERE ID=\"abc\""] [duration=1.3s] ["process keys"=1500]`,
+		`[INFO] [zap_log_test.go:126] [Welcome]`,
+		`[INFO] [zap_log_test.go:127] ["Welcome TiDB"]`,
+		`[INFO] [zap_log_test.go:128] [欢迎]`,
+		`[INFO] [zap_log_test.go:129] ["欢迎来到 TiDB"]`,
+		`[WARN] [zap_log_test.go:130] [Type] [Counter=NaN] [Score=+Inf]`,
+		`[INFO] [zap_log_test.go:134] ["new connection"] [connID=1] [traceID=dse1121]`,
+		`[INFO] [zap_log_test.go:135] ["Testing typs"] [filed1=noquote] `+
 			`[filed2="in quote"] [urls="[http://mock1.com:2347,http://mock2.com:2432]"] `+
 			`[urls-peer="[t1,\"t2 fine\"]"] ["store ids"="[1,4,5]"] [object="{username=user1}"] `+
 			`[object2="{username=\"user 2\"}"] [binary="YWIxMjM="] ["is processed"=true] `+
@@ -248,4 +249,16 @@ func (t *testZapLogSuite) TestRotateLog(c *C) {
 	files, _ := ioutil.ReadDir(tempDir)
 	c.Assert(len(files), Equals, 2)
 	os.RemoveAll(tempDir)
+}
+
+func (t *testZapLogSuite) TestErrorLog(c *C) {
+	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
+	lg := newZapTestLogger(conf, c)
+	lg.Error("", zap.NamedError("err", mockStackMethod()))
+	lg.AssertContains("[err=log-stack-test]")
+	lg.AssertContains("] [errVerbose=\"")
+}
+
+func mockStackMethod() error {
+	return errors.New("log-stack-test")
 }
