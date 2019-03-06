@@ -603,6 +603,8 @@ func (enc *textEncoder) tryAddRuneError(r rune, size int) bool {
 func (enc *textEncoder) addFields(fields []zapcore.Field) {
 	for _, f := range fields {
 		if f.Type == zapcore.ErrorType {
+			// handle ErrorType in pingcap/log to fix "[key=?,keyVerbose=?]" problem.
+			// see more detail at https://github.com/pingcap/log/pull/5
 			enc.encodeError(f)
 			continue
 		}
