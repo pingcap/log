@@ -254,11 +254,7 @@ func (t *testZapLogSuite) TestRotateLog(c *C) {
 func (t *testZapLogSuite) TestErrorLog(c *C) {
 	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
 	lg := newZapTestLogger(conf, c)
-	lg.Error("", zap.NamedError("err", mockStackMethod()))
+	lg.Error("", zap.NamedError("err", errors.New("log-stack-test")))
 	lg.AssertContains("[err=log-stack-test]")
 	lg.AssertContains("] [errVerbose=\"")
-}
-
-func mockStackMethod() error {
-	return errors.New("log-stack-test")
 }
