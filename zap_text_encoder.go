@@ -36,6 +36,7 @@ package log
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -600,9 +601,33 @@ func (enc *textEncoder) tryAddRuneError(r rune, size int) bool {
 }
 
 func (enc *textEncoder) addFields(fields []zapcore.Field) {
-	for i := range fields {
+	for _, f := range fields {
+		if f.Type == zapcore.ErrorType {
+			// handle ErrorType in pingcap/log to fix "[key=?,keyVerbose=?]" problem.
+			// see more detail at https://github.com/pingcap/log/pull/5
+			enc.encodeError(f)
+			continue
+		}
 		enc.beginQuoteFiled()
-		fields[i].AddTo(enc)
+		f.AddTo(enc)
 		enc.endQuoteFiled()
+	}
+}
+
+func (enc *textEncoder) encodeError(f zapcore.Field) {
+	err := f.Interface.(error)
+	basic := err.Error()
+	enc.beginQuoteFiled()
+	enc.AddString(f.Key, basic)
+	enc.endQuoteFiled()
+	if e, isFormatter := err.(fmt.Formatter); isFormatter {
+		verbose := fmt.Sprintf("%+v", e)
+		if verbose != basic {
+			// This is a rich error type, like those produced by
+			// github.com/pkg/errors.
+			enc.beginQuoteFiled()
+			enc.AddString(f.Key+"Verbose", verbose)
+			enc.endQuoteFiled()
+		}
 	}
 }
