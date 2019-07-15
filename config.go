@@ -60,7 +60,7 @@ type Config struct {
 	DisableStacktrace bool `toml:"disable-stacktrace" json:"disable-stacktrace"`
 	// DisableErrorVerbose stops annotating logs with the full verbose error
 	// message.
-	DisableErrorVerbose bool `toml:"disable-error-verbose", json:"disable-error-verbose"`
+	DisableErrorVerbose bool `toml:"disable-error-verbose" json:"disable-error-verbose"`
 	// SamplingConfig sets a sampling strategy for the logger. Sampling caps the
 	// global CPU and I/O load that logging puts on your process while attempting
 	// to preserve a representative subset of your logs.
