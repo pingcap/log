@@ -86,13 +86,13 @@ func (v *verifyLogger) With(fields ...zap.Field) verifyLogger {
 	}
 }
 
-func newZapTestLogger(cfg *Config, c *C) verifyLogger {
+func newZapTestLogger(cfg *Config, c *C, opts ...zap.Option) verifyLogger {
+	// TestingWriter is used to write to memory.
+	// Used in the verify logger.
 	writer := newTestingWriter(c)
-	opt := cfg.buildOptions(writer)
-	level := zap.NewAtomicLevel()
-	err := level.UnmarshalText([]byte(cfg.Level))
+	lg, _, err := InitLoggerWithWriteSyncer(cfg, writer, opts...)
 	c.Assert(err, IsNil)
-	lg := zap.New(NewTextCore(newZapTextEncoder(cfg).(*textEncoder), writer, level), opt...)
+
 	return verifyLogger{
 		Logger: lg,
 		w:      writer,
@@ -257,4 +257,23 @@ func (t *testZapLogSuite) TestErrorLog(c *C) {
 	lg.Error("", zap.NamedError("err", errors.New("log-stack-test")))
 	lg.AssertContains("[err=log-stack-test]")
 	lg.AssertContains("] [errVerbose=\"")
+}
+
+func (t *testZapLogSuite) TestWithOptions(c *C) {
+	conf := &Config{
+		Level:               "debug",
+		File:                FileLogConfig{},
+		DisableTimestamp:    true,
+		DisableErrorVerbose: true,
+	}
+	lg := newZapTestLogger(conf, c, zap.AddStacktrace(zapcore.FatalLevel))
+	lg.Error("Testing", zap.Error(errors.New("log-with-option")))
+	lg.AssertNotContains("errVerbose")
+	lg.AssertNotContains("stack")
+}
+
+func (v *verifyLogger) AssertNotContains(substr string) {
+	for _, m := range v.w.messages {
+		v.w.c.Assert(strings.Contains(m, substr), IsFalse)
+	}
 }
