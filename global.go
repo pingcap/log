@@ -59,6 +59,12 @@ func Fatal(msg string, fields ...zap.Field) {
 	L().WithOptions(zap.AddCallerSkip(1)).Fatal(msg, fields...)
 }
 
+// With creates a child logger and adds structured context to it.
+// Fields added to the child don't affect the parent, and vice versa.
+func With(fields ...zap.Field) *zap.Logger {
+	return L().WithOptions(zap.AddCallerSkip(1)).With(fields...)
+}
+
 // SetLevel alters the logging level.
 func SetLevel(l zapcore.Level) {
 	_globalP.Level.SetLevel(l)
