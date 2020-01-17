@@ -15,6 +15,7 @@ package log
 
 import (
 	. "github.com/pingcap/check"
+	"go.uber.org/zap"
 )
 
 var _ = Suite(&testLogSuite{})
@@ -30,4 +31,12 @@ func (t *testLogSuite) TestExport(c *C) {
 	Warn("Testing")
 	Error("Testing")
 	lg.AssertContains("log_test.go:")
+
+	lg = newZapTestLogger(conf, c)
+	ReplaceGlobals(lg.Logger, nil)
+	logger := With(zap.String("name", "tester"), zap.Int64("age", 42))
+	logger.Info("hello")
+	logger.Debug("world")
+	lg.AssertContains(`name=tester`)
+	lg.AssertContains(`age=42`)
 }
