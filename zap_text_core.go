@@ -14,6 +14,7 @@
 package log
 
 import (
+	"fmt"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -44,6 +45,8 @@ func (c *textIOCore) With(fields []zapcore.Field) zapcore.Core {
 		for _, field := range fields {
 			field.AddTo(e)
 		}
+	default:
+		panic(fmt.Sprintf("unsupported encode type: %T for With operation", clone.enc))
 	}
 	return clone
 }
