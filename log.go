@@ -49,7 +49,7 @@ func InitLoggerWithWriteSyncer(cfg *Config, output zapcore.WriteSyncer, opts ...
 	if err != nil {
 		return nil, nil, err
 	}
-	core := NewTextCore(newZapTextEncoder(cfg).(*textEncoder), output, level)
+	core := NewTextCore(newZapTextEncoder(cfg), output, level)
 	opts = append(cfg.buildOptions(output), opts...)
 	lg := zap.New(core, opts...)
 	r := &ZapProperties{

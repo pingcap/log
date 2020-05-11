@@ -68,7 +68,7 @@ type verifyLogger struct {
 
 func (v *verifyLogger) AssertMessage(msg ...string) {
 	for i, m := range msg {
-		v.w.c.Assert(m, Equals, v.w.messages[i])
+		v.w.c.Assert(v.w.messages[i], Equals, m)
 	}
 }
 
@@ -276,4 +276,19 @@ func (v *verifyLogger) AssertNotContains(substr string) {
 	for _, m := range v.w.messages {
 		v.w.c.Assert(strings.Contains(m, substr), IsFalse)
 	}
+}
+
+func (t *testZapLogSuite) TestLogJSON(c *C) {
+	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true, Format: "json"}
+	lg := newZapTestLogger(conf, c)
+	sugar := lg.Sugar()
+	defer sugar.Sync()
+	sugar.Infow("failed to fetch URL",
+		"url", "http://example.com",
+		"attempt", 3,
+		"backoff", time.Second,
+	)
+	lg.With(zap.String("connID", "1"), zap.String("traceID", "dse1121")).Info("new connection")
+	lg.AssertMessage("{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:286\",\"message\":\"failed to fetch URL\",\"url\":\"http://example.com\",\"attempt\":3,\"backoff\":\"1s\"}",
+		"{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:291\",\"message\":\"new connection\",\"connID\":\"1\",\"traceID\":\"dse1121\"}")
 }
