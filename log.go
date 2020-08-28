@@ -32,9 +32,8 @@ func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, e
 		}
 		output = zapcore.AddSync(lg)
 	} else {
-		stdOut, close, err := zap.Open([]string{"stdout"}...)
+		stdOut, _, err := zap.Open([]string{"stdout"}...)
 		if err != nil {
-			close()
 			return nil, nil, err
 		}
 		output = stdOut
