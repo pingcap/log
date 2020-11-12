@@ -16,11 +16,23 @@ package log
 import (
 	"errors"
 	"os"
+	"sync/atomic"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
+
+var _globalL, _globalP, _globalS atomic.Value
+
+func init() {
+	l, p := newStdLogger()
+	_globalL.Store(l)
+	_globalP.Store(p)
+
+	s := _globalL.Load().(*zap.Logger).Sugar()
+	_globalS.Store(s)
+}
 
 // InitLogger initializes a zap logger.
 func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
@@ -86,29 +98,24 @@ func newStdLogger() (*zap.Logger, *ZapProperties) {
 	return lg, r
 }
 
-var (
-	_globalL, _globalP = newStdLogger()
-	_globalS           = _globalL.Sugar()
-)
-
 // L returns the global Logger, which can be reconfigured with ReplaceGlobals.
 // It's safe for concurrent use.
 func L() *zap.Logger {
-	return _globalL
+	return _globalL.Load().(*zap.Logger)
 }
 
 // S returns the global SugaredLogger, which can be reconfigured with
 // ReplaceGlobals. It's safe for concurrent use.
 func S() *zap.SugaredLogger {
-	return _globalS
+	return _globalS.Load().(*zap.SugaredLogger)
 }
 
 // ReplaceGlobals replaces the global Logger and SugaredLogger.
-// It's unsafe for concurrent use.
+// It's safe for concurrent use.
 func ReplaceGlobals(logger *zap.Logger, props *ZapProperties) {
-	_globalL = logger
-	_globalS = logger.Sugar()
-	_globalP = props
+	_globalL.Store(logger)
+	_globalS.Store(logger.Sugar())
+	_globalP.Store(props)
 }
 
 // Sync flushes any buffered log entries.
