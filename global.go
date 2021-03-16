@@ -18,6 +18,9 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// ZapEncodingName is the encoder name registered in zap
+var ZapEncodingName = "pingcap-log"
+
 // Debug logs a message at DebugLevel. The message includes any fields passed
 // at the log site, as well as any fields accumulated on the logger.
 func Debug(msg string, fields ...zap.Field) {

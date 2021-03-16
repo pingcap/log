@@ -16,6 +16,7 @@ package log
 import (
 	"errors"
 	"os"
+	"sync"
 	"sync/atomic"
 
 	"go.uber.org/zap"
@@ -24,6 +25,8 @@ import (
 )
 
 var _globalL, _globalP, _globalS atomic.Value
+
+var registerOnce sync.Once
 
 func init() {
 	l, p := newStdLogger()
@@ -53,14 +56,23 @@ func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, e
 	return InitLoggerWithWriteSyncer(cfg, output, opts...)
 }
 
-// InitLoggerWithWriteSyncer initializes a zap logger with specified  write syncer.
+// InitLoggerWithWriteSyncer initializes a zap logger with specified write syncer.
 func InitLoggerWithWriteSyncer(cfg *Config, output zapcore.WriteSyncer, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
 	level := zap.NewAtomicLevel()
 	err := level.UnmarshalText([]byte(cfg.Level))
 	if err != nil {
 		return nil, nil, err
 	}
-	core := NewTextCore(newZapTextEncoder(cfg), output, level)
+	encoder := newZapTextEncoder(cfg)
+	registerOnce.Do(func() {
+		err = zap.RegisterEncoder(ZapEncodingName, func(zapcore.EncoderConfig) (zapcore.Encoder, error) {
+			return encoder, nil
+		})
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	core := NewTextCore(encoder, output, level)
 	opts = append(cfg.buildOptions(output), opts...)
 	lg := zap.New(core, opts...)
 	r := &ZapProperties{
