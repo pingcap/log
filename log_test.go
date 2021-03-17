@@ -14,8 +14,14 @@
 package log
 
 import (
+	"bufio"
+	"bytes"
+	"net/url"
+	"strings"
+
 	. "github.com/pingcap/check"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var _ = Suite(&testLogSuite{})
@@ -39,4 +45,51 @@ func (t *testLogSuite) TestExport(c *C) {
 	logger.Debug("world")
 	lg.AssertContains(`name=tester`)
 	lg.AssertContains(`age=42`)
+}
+
+func (t *testLogSuite) TestZapTextEncoder(c *C) {
+	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
+
+	var buffer bytes.Buffer
+	writer := bufio.NewWriter(&buffer)
+	encoder := newZapTextEncoder(conf)
+	lg := zap.
+		New(zapcore.NewCore(encoder, zapcore.AddSync(writer), zapcore.InfoLevel)).
+		Sugar()
+
+	lg.Info("this is a message from zap")
+	writer.Flush()
+	c.Assert(buffer.String(), Equals, `[INFO] ["this is a message from zap"]
+`)
+}
+
+// testingSink implements zap.Sink by writing all messages to a buffer.
+type testingSink struct {
+	*bytes.Buffer
+}
+
+// Implement Close and Sync as no-ops to satisfy the interface. The Write
+// method is provided by the embedded buffer.
+func (s *testingSink) Close() error { return nil }
+func (s *testingSink) Sync() error  { return nil }
+
+func (t *testLogSuite) TestRegisteredTextEncoder(c *C) {
+	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
+	// register the pingcap-log encoder
+	_, _, err := InitLoggerWithWriteSyncer(conf, newTestingWriter(c))
+	c.Assert(err, IsNil)
+
+	sink := &testingSink{new(bytes.Buffer)}
+	zap.RegisterSink("memory", func(*url.URL) (zap.Sink, error) {
+		return sink, nil
+	})
+	lgc := zap.NewProductionConfig()
+	lgc.Encoding = ZapEncodingName
+	lgc.OutputPaths = []string{"memory://"}
+
+	lg, err := lgc.Build()
+	c.Assert(err, IsNil)
+
+	lg.Info("this is a message from zap")
+	c.Assert(strings.Contains(sink.String(), `["this is a message from zap"]`), IsTrue)
 }
