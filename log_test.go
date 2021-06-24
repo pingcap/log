@@ -52,7 +52,7 @@ func (t *testLogSuite) TestZapTextEncoder(c *C) {
 
 	var buffer bytes.Buffer
 	writer := bufio.NewWriter(&buffer)
-	encoder := newZapTextEncoder(conf)
+	encoder := NewTextEncoder(conf)
 	lg := zap.
 		New(zapcore.NewCore(encoder, zapcore.AddSync(writer), zapcore.InfoLevel)).
 		Sugar()

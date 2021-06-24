@@ -191,7 +191,7 @@ func (t *testZapLogSuite) TestTimeEncoder(c *C) {
 	c.Assert(err, IsNil)
 	tt := time.Unix(sec, nsec).In(as)
 	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
-	enc := newZapTextEncoder(conf).(*textEncoder)
+	enc := NewTextEncoder(conf).(*textEncoder)
 	DefaultTimeEncoder(tt, enc)
 	c.Assert(enc.buf.String(), Equals, `2019/01/11 15:45:41.165 +08:00`)
 	enc.buf.Reset()
@@ -217,7 +217,7 @@ func (t *testZapLogSuite) TestZapCaller(c *C) {
 		"<unknown>",
 	}
 	conf := &Config{Level: "deug", File: FileLogConfig{}, DisableTimestamp: true}
-	enc := newZapTextEncoder(conf).(*textEncoder)
+	enc := NewTextEncoder(conf).(*textEncoder)
 
 	for i, d := range data {
 		ShortCallerEncoder(d, enc)

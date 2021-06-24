@@ -63,7 +63,7 @@ func InitLoggerWithWriteSyncer(cfg *Config, output zapcore.WriteSyncer, opts ...
 	if err != nil {
 		return nil, nil, err
 	}
-	encoder := newZapTextEncoder(cfg)
+	encoder := NewTextEncoder(cfg)
 	registerOnce.Do(func() {
 		err = zap.RegisterEncoder(ZapEncodingName, func(zapcore.EncoderConfig) (zapcore.Encoder, error) {
 			return encoder, nil
