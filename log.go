@@ -15,6 +15,7 @@ package log
 
 import (
 	"errors"
+	"go.uber.org/zap/zaptest"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -51,6 +52,17 @@ func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, e
 		output = stdOut
 	}
 	return InitLoggerWithWriteSyncer(cfg, output, opts...)
+}
+
+func InitTestLogger(t zaptest.TestingT, cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
+	writer := newTestingWriter(t)
+	zapOptions := []zap.Option{
+		// Send zap errors to the same writer and mark the test as failed if
+		// that happens.
+		zap.ErrorOutput(writer.WithMarkFailed(true)),
+	}
+	opts = append(zapOptions, opts...)
+	return InitLoggerWithWriteSyncer(cfg, writer, opts...)
 }
 
 // InitLoggerWithWriteSyncer initializes a zap logger with specified write syncer.
