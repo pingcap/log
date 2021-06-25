@@ -17,51 +17,65 @@ import (
 	"bufio"
 	"bytes"
 	"net/url"
-	"strings"
+	"testing"
 
-	. "github.com/pingcap/check"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-var _ = Suite(&testLogSuite{})
+func TestExport(t *testing.T) {
+	ts := newTestLogSpy(t)
+	conf := &Config{Level: "debug", DisableTimestamp: true}
+	logger, _, _ := InitTestLogger(ts, conf)
+	ReplaceGlobals(logger, nil)
 
-type testLogSuite struct{}
-
-func (t *testLogSuite) TestExport(c *C) {
-	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
-	lg := newZapTestLogger(conf, c)
-	ReplaceGlobals(lg.Logger, nil)
 	Info("Testing")
 	Debug("Testing")
 	Warn("Testing")
 	Error("Testing")
-	lg.AssertContains("log_test.go:")
+	ts.assertMessagesContains("log_test.go:")
 
-	lg = newZapTestLogger(conf, c)
-	ReplaceGlobals(lg.Logger, nil)
-	logger := With(zap.String("name", "tester"), zap.Int64("age", 42))
-	logger.Info("hello")
-	logger.Debug("world")
-	lg.AssertContains(`name=tester`)
-	lg.AssertContains(`age=42`)
+	ts = newTestLogSpy(t)
+	logger, _, _ = InitTestLogger(ts, conf)
+	ReplaceGlobals(logger, nil)
+
+	newLogger := With(zap.String("name", "tester"), zap.Int64("age", 42))
+	newLogger.Info("hello")
+	newLogger.Debug("world")
+	ts.assertMessagesContains(`name=tester`)
+	ts.assertMessagesContains(`age=42`)
 }
 
-func (t *testLogSuite) TestZapTextEncoder(c *C) {
+func TestZapTextEncoder(t *testing.T) {
 	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
 
 	var buffer bytes.Buffer
 	writer := bufio.NewWriter(&buffer)
-	encoder := newZapTextEncoder(conf)
-	lg := zap.
-		New(zapcore.NewCore(encoder, zapcore.AddSync(writer), zapcore.InfoLevel)).
-		Sugar()
+	encoder := NewTextEncoder(conf)
+	logger := zap.New(zapcore.NewCore(encoder, zapcore.AddSync(writer), zapcore.InfoLevel)).Sugar()
+
+	logger.Info("this is a message from zap")
+	_ = writer.Flush()
+	assert.Equal(t, `[INFO] ["this is a message from zap"]` + "\n", buffer.String())
+}
+
+func TestRegisteredTextEncoder(t *testing.T) {
+	sink := &testingSink{new(bytes.Buffer)}
+	_ = zap.RegisterSink("memory", func(*url.URL) (zap.Sink, error) {
+		return sink, nil
+	})
+	lgc := zap.NewProductionConfig()
+	lgc.Encoding = ZapEncodingName
+	lgc.OutputPaths = []string{"memory://"}
+
+	lg, err := lgc.Build()
+	assert.Nil(t, err)
 
 	lg.Info("this is a message from zap")
-	writer.Flush()
-	c.Assert(buffer.String(), Equals, `[INFO] ["this is a message from zap"]
-`)
+	assert.Contains(t, sink.String(), `["this is a message from zap"]`)
 }
+
 
 // testingSink implements zap.Sink by writing all messages to a buffer.
 type testingSink struct {
@@ -72,24 +86,3 @@ type testingSink struct {
 // method is provided by the embedded buffer.
 func (s *testingSink) Close() error { return nil }
 func (s *testingSink) Sync() error  { return nil }
-
-func (t *testLogSuite) TestRegisteredTextEncoder(c *C) {
-	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
-	// register the pingcap-log encoder
-	_, _, err := InitLoggerWithWriteSyncer(conf, newTestingWriter(c))
-	c.Assert(err, IsNil)
-
-	sink := &testingSink{new(bytes.Buffer)}
-	zap.RegisterSink("memory", func(*url.URL) (zap.Sink, error) {
-		return sink, nil
-	})
-	lgc := zap.NewProductionConfig()
-	lgc.Encoding = ZapEncodingName
-	lgc.OutputPaths = []string{"memory://"}
-
-	lg, err := lgc.Build()
-	c.Assert(err, IsNil)
-
-	lg.Info("this is a message from zap")
-	c.Assert(strings.Contains(sink.String(), `["this is a message from zap"]`), IsTrue)
-}

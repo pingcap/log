@@ -14,9 +14,7 @@
 package log
 
 import (
-	"bytes"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"net"
 	"os"
@@ -25,79 +23,11 @@ import (
 	"time"
 	"unsafe"
 
-	. "github.com/pingcap/check"
 	"github.com/pingcap/errors"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
-
-func Test(t *testing.T) {
-	TestingT(t)
-}
-
-var _ = Suite(&testZapLogSuite{})
-
-type testZapLogSuite struct{}
-
-// testingWriter is a WriteSyncer that writes to the the messages.
-type testingWriter struct {
-	c        *C
-	messages []string
-}
-
-func newTestingWriter(c *C) *testingWriter {
-	return &testingWriter{c: c}
-}
-
-func (w *testingWriter) Write(p []byte) (n int, err error) {
-	n = len(p)
-	p = bytes.TrimRight(p, "\n")
-	m := fmt.Sprintf("%s", p)
-	w.messages = append(w.messages, m)
-	return n, nil
-}
-
-func (w *testingWriter) Sync() error {
-	return nil
-}
-
-type verifyLogger struct {
-	*zap.Logger
-	w *testingWriter
-}
-
-func (v *verifyLogger) AssertMessage(msg ...string) {
-	for i, m := range msg {
-		v.w.c.Assert(v.w.messages[i], Equals, m)
-	}
-}
-
-func (v *verifyLogger) AssertContains(substr string) {
-	for _, m := range v.w.messages {
-		v.w.c.Assert(strings.Contains(m, substr), IsTrue)
-	}
-}
-
-func (v *verifyLogger) With(fields ...zap.Field) verifyLogger {
-	newLg := v.Logger.With(fields...)
-	return verifyLogger{
-		Logger: newLg,
-		w:      v.w,
-	}
-}
-
-func newZapTestLogger(cfg *Config, c *C, opts ...zap.Option) verifyLogger {
-	// TestingWriter is used to write to memory.
-	// Used in the verify logger.
-	writer := newTestingWriter(c)
-	lg, _, err := InitLoggerWithWriteSyncer(cfg, writer, opts...)
-	c.Assert(err, IsNil)
-
-	return verifyLogger{
-		Logger: lg,
-		w:      writer,
-	}
-}
 
 type username string
 
@@ -106,11 +36,15 @@ func (n username) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	return nil
 }
 
-func (t *testZapLogSuite) TestLog(c *C) {
-	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
-	lg := newZapTestLogger(conf, c)
-	sugar := lg.Sugar()
-	defer sugar.Sync()
+func TestLog(t *testing.T) {
+	ts := newTestLogSpy(t)
+	conf := &Config{Level: "debug", DisableTimestamp: true}
+	logger, _, _ := InitTestLogger(ts, conf)
+	sugar := logger.Sugar()
+	defer func() {
+		_ = sugar.Sync()
+	}()
+
 	sugar.Infow("failed to fetch URL",
 		"url", "http://example.com",
 		"attempt", 3,
@@ -131,8 +65,9 @@ func (t *testZapLogSuite) TestLog(c *C) {
 		"Counter", math.NaN(),
 		"Score", math.Inf(1),
 	)
-	lg.With(zap.String("connID", "1"), zap.String("traceID", "dse1121")).Info("new connection")
-	lg.Info("Testing typs",
+
+	logger.With(zap.String("connID", "1"), zap.String("traceID", "dse1121")).Info("new connection")
+	logger.Info("Testing typs",
 		zap.String("filed1", "noquote"),
 		zap.String("filed2", "in quote"),
 		zap.Strings("urls", []string{"http://mock1.com:2347", "http://mock2.com:2432"}),
@@ -162,17 +97,17 @@ func (t *testZapLogSuite) TestLog(c *C) {
 		}),
 		zap.Duration("duration", 10*time.Second),
 	)
-	lg.AssertMessage(
-		`[INFO] [zap_log_test.go:114] ["failed to fetch URL"] [url=http://example.com] [attempt=3] [backoff=1s]`,
-		`[INFO] [zap_log_test.go:119] ["failed to \"fetch\" [URL]: http://example.com"]`,
-		`[DEBUG] [zap_log_test.go:120] ["Slow query"] [sql="SELECT * FROM TABLE\n\tWHERE ID=\"abc\""] [duration=1.3s] ["process keys"=1500]`,
-		`[INFO] [zap_log_test.go:126] [Welcome]`,
-		`[INFO] [zap_log_test.go:127] ["Welcome TiDB"]`,
-		`[INFO] [zap_log_test.go:128] [欢迎]`,
-		`[INFO] [zap_log_test.go:129] ["欢迎来到 TiDB"]`,
-		`[WARN] [zap_log_test.go:130] [Type] [Counter=NaN] [Score=+Inf]`,
-		`[INFO] [zap_log_test.go:134] ["new connection"] [connID=1] [traceID=dse1121]`,
-		`[INFO] [zap_log_test.go:135] ["Testing typs"] [filed1=noquote] `+
+	ts.assertMessages(
+		`[INFO] [zap_log_test.go:48] ["failed to fetch URL"] [url=http://example.com] [attempt=3] [backoff=1s]`,
+		`[INFO] [zap_log_test.go:53] ["failed to \"fetch\" [URL]: http://example.com"]`,
+		`[DEBUG] [zap_log_test.go:54] ["Slow query"] [sql="SELECT * FROM TABLE\n\tWHERE ID=\"abc\""] [duration=1.3s] ["process keys"=1500]`,
+		`[INFO] [zap_log_test.go:60] [Welcome]`,
+		`[INFO] [zap_log_test.go:61] ["Welcome TiDB"]`,
+		`[INFO] [zap_log_test.go:62] [欢迎]`,
+		`[INFO] [zap_log_test.go:63] ["欢迎来到 TiDB"]`,
+		`[WARN] [zap_log_test.go:64] [Type] [Counter=NaN] [Score=+Inf]`,
+		`[INFO] [zap_log_test.go:69] ["new connection"] [connID=1] [traceID=dse1121]`,
+		`[INFO] [zap_log_test.go:70] ["Testing typs"] [filed1=noquote] `+
 			`[filed2="in quote"] [urls="[http://mock1.com:2347,http://mock2.com:2432]"] `+
 			`[urls-peer="[t1,\"t2 fine\"]"] ["store ids"="[1,4,5]"] [object="{username=user1}"] `+
 			`[object2="{username=\"user 2\"}"] [binary="YWIxMjM="] ["is processed"=true] `+
@@ -181,29 +116,33 @@ func (t *testZapLogSuite) TestLog(c *C) {
 			`[test="[💖,�,☺☻☹,日a本b語ç日ð本Ê語þ日¥本¼語i日©,日a本b語ç日ð本Ê語þ日¥本¼語i日©日a本b語ç日ð本Ê語þ日¥本¼語i日©日a本b語ç日ð本Ê語þ日¥本¼語i日©,\\ufffd\\ufffd\\ufffd\\ufffd,`+
 			`<car><mirror>XML</mirror></car>]"] [duration=10s]`,
 	)
-	c.Assert(func() { sugar.Panic("unknown") }, PanicMatches, `unknown`)
+
+	assert.PanicsWithValue(t, "unknown", func() { sugar.Panic("unknown") })
 }
 
-func (t *testZapLogSuite) TestTimeEncoder(c *C) {
+func TestTimeEncoder(t *testing.T) {
 	sec := int64(1547192741)
 	nsec := int64(165279177)
 	as, err := time.LoadLocation("Asia/Shanghai")
-	c.Assert(err, IsNil)
+	assert.Nil(t, err)
+
 	tt := time.Unix(sec, nsec).In(as)
 	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
-	enc := newZapTextEncoder(conf).(*textEncoder)
+	enc := NewTextEncoder(conf).(*textEncoder)
 	DefaultTimeEncoder(tt, enc)
-	c.Assert(enc.buf.String(), Equals, `2019/01/11 15:45:41.165 +08:00`)
+	assert.Equal(t, "2019/01/11 15:45:41.165 +08:00", enc.buf.String())
+
 	enc.buf.Reset()
 	utc, err := time.LoadLocation("UTC")
-	c.Assert(err, IsNil)
+	assert.Nil(t, err)
+
 	utcTime := tt.In(utc)
 	DefaultTimeEncoder(utcTime, enc)
-	c.Assert(enc.buf.String(), Equals, `2019/01/11 07:45:41.165 +00:00`)
+	assert.Equal(t, "2019/01/11 07:45:41.165 +00:00", enc.buf.String())
 }
 
 // See [logger-header]https://github.com/tikv/rfcs/blob/master/text/2018-12-19-unified-log-format.md#log-header-section.
-func (t *testZapLogSuite) TestZapCaller(c *C) {
+func TestZapCaller(t *testing.T) {
 	data := []zapcore.EntryCaller{
 		{Defined: true, PC: uintptr(unsafe.Pointer(nil)), File: "server.go", Line: 132},
 		{Defined: true, PC: uintptr(unsafe.Pointer(nil)), File: "server/coordinator.go", Line: 20},
@@ -217,17 +156,17 @@ func (t *testZapLogSuite) TestZapCaller(c *C) {
 		"<unknown>",
 	}
 	conf := &Config{Level: "deug", File: FileLogConfig{}, DisableTimestamp: true}
-	enc := newZapTextEncoder(conf).(*textEncoder)
+	enc := NewTextEncoder(conf).(*textEncoder)
 
 	for i, d := range data {
 		ShortCallerEncoder(d, enc)
-		c.Assert(enc.buf.String(), Equals, expect[i])
+		assert.Equal(t, expect[i], enc.buf.String())
 		enc.buf.Reset()
 	}
 }
 
-func (t *testZapLogSuite) TestRotateLog(c *C) {
-	tempDir, _ := ioutil.TempDir("/tmp", "pd-tests-log")
+func TestRotateLog(t *testing.T) {
+	tempDir, _ := os.MkdirTemp("/tmp", "pd-tests-log")
 	conf := &Config{
 		Level: "info",
 		File: FileLogConfig{
@@ -235,60 +174,112 @@ func (t *testZapLogSuite) TestRotateLog(c *C) {
 			MaxSize:  1,
 		},
 	}
-	lg, _, err := InitLogger(conf)
-	c.Assert(err, IsNil)
+	logger, _, err := InitLogger(conf)
+	assert.Nil(t, err)
+
 	var data []byte
 	for i := 1; i <= 1*1024*1024; i++ {
 		if i%1000 != 0 {
 			data = append(data, 'd')
 			continue
 		}
-		lg.Info(string(data))
+		logger.Info(string(data))
 		data = data[:0]
 	}
-	files, _ := ioutil.ReadDir(tempDir)
-	c.Assert(len(files), Equals, 2)
-	os.RemoveAll(tempDir)
+	files, _ := os.ReadDir(tempDir)
+	assert.Len(t, files, 2)
+	_ = os.RemoveAll(tempDir)
 }
 
-func (t *testZapLogSuite) TestErrorLog(c *C) {
-	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
-	lg := newZapTestLogger(conf, c)
-	lg.Error("", zap.NamedError("err", errors.New("log-stack-test")))
-	lg.AssertContains("[err=log-stack-test]")
-	lg.AssertContains("] [errVerbose=\"")
+func TestErrorLog(t *testing.T) {
+	ts := newTestLogSpy(t)
+	conf := &Config{Level: "debug", DisableTimestamp: true}
+	logger, _, _ := InitTestLogger(ts, conf)
+	logger.Error("", zap.NamedError("err", errors.New("log-stack-test")))
+	ts.assertMessagesContains("[err=log-stack-test]")
+	ts.assertMessagesContains("] [errVerbose=\"")
 }
 
-func (t *testZapLogSuite) TestWithOptions(c *C) {
+func TestWithOptions(t *testing.T) {
+	ts := newTestLogSpy(t)
 	conf := &Config{
 		Level:               "debug",
-		File:                FileLogConfig{},
 		DisableTimestamp:    true,
 		DisableErrorVerbose: true,
 	}
-	lg := newZapTestLogger(conf, c, zap.AddStacktrace(zapcore.FatalLevel))
-	lg.Error("Testing", zap.Error(errors.New("log-with-option")))
-	lg.AssertNotContains("errVerbose")
-	lg.AssertNotContains("stack")
+	logger, _, _ := InitTestLogger(ts, conf, zap.AddStacktrace(zapcore.FatalLevel))
+	logger.Error("Testing", zap.Error(errors.New("log-with-option")))
+	ts.assertMessagesNotContains("errorVerbose")
+	ts.assertMessagesNotContains("stack")
 }
 
-func (v *verifyLogger) AssertNotContains(substr string) {
-	for _, m := range v.w.messages {
-		v.w.c.Assert(strings.Contains(m, substr), IsFalse)
-	}
-}
-
-func (t *testZapLogSuite) TestLogJSON(c *C) {
-	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true, Format: "json"}
-	lg := newZapTestLogger(conf, c)
-	sugar := lg.Sugar()
+func TestLogJSON(t *testing.T) {
+	ts := newTestLogSpy(t)
+	conf := &Config{Level: "debug", DisableTimestamp: true, Format: "json"}
+	logger, _, _ := InitTestLogger(ts, conf, zap.AddStacktrace(zapcore.FatalLevel))
+	sugar := logger.Sugar()
 	defer sugar.Sync()
+
 	sugar.Infow("failed to fetch URL",
 		"url", "http://example.com",
 		"attempt", 3,
 		"backoff", time.Second,
 	)
-	lg.With(zap.String("connID", "1"), zap.String("traceID", "dse1121")).Info("new connection")
-	lg.AssertMessage("{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:286\",\"message\":\"failed to fetch URL\",\"url\":\"http://example.com\",\"attempt\":3,\"backoff\":\"1s\"}",
-		"{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:291\",\"message\":\"new connection\",\"connID\":\"1\",\"traceID\":\"dse1121\"}")
+	logger.With(zap.String("connID", "1"), zap.String("traceID", "dse1121")).Info("new connection")
+	ts.assertMessages("{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:223\",\"message\":\"failed to fetch URL\",\"url\":\"http://example.com\",\"attempt\":3,\"backoff\":\"1s\"}",
+		"{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:228\",\"message\":\"new connection\",\"connID\":\"1\",\"traceID\":\"dse1121\"}")
+}
+
+// testLogSpy is a testing.TB that captures logged messages.
+type testLogSpy struct {
+	testing.TB
+
+	failed   bool
+	Messages []string
+}
+
+func newTestLogSpy(t testing.TB) *testLogSpy {
+	return &testLogSpy{TB: t}
+}
+
+func (t *testLogSpy) Fail() {
+	t.failed = true
+}
+
+func (t *testLogSpy) Failed() bool {
+	return t.failed
+}
+
+func (t *testLogSpy) FailNow() {
+	t.Fail()
+	t.TB.FailNow()
+}
+
+func (t *testLogSpy) Logf(format string, args ...interface{}) {
+	// Log messages are in the format,
+	//
+	//   2017-10-27T13:03:01.000-0700	DEBUG	your message here	{data here}
+	//
+	// We strip the first part of these messages because we can't really test
+	// for the timestamp from these tests.
+	m := fmt.Sprintf(format, args...)
+	m = m[strings.IndexByte(m, '\t')+1:]
+	t.Messages = append(t.Messages, m)
+	t.TB.Log(m)
+}
+
+func (t *testLogSpy) assertMessages(msgs ...string) {
+	assert.Equal(t.TB, msgs, t.Messages)
+}
+
+func (t *testLogSpy) assertMessagesContains(msg string) {
+	for _, actualMsg := range t.Messages {
+		assert.Contains(t.TB, actualMsg, msg)
+	}
+}
+
+func (t *testLogSpy) assertMessagesNotContains(msg string) {
+	for _, actualMsg := range t.Messages {
+		assert.NotContains(t.TB, actualMsg, msg)
+	}
 }
