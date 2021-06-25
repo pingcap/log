@@ -16,12 +16,12 @@ package log
 import (
 	"bufio"
 	"bytes"
-	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap/zapcore"
 	"net/url"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func TestExport(t *testing.T) {
