@@ -15,13 +15,13 @@ package log
 
 import (
 	"errors"
-	"go.uber.org/zap/zaptest"
 	"os"
 	"sync"
 	"sync/atomic"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
