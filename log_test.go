@@ -8,6 +8,7 @@
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
@@ -57,7 +58,7 @@ func TestZapTextEncoder(t *testing.T) {
 
 	logger.Info("this is a message from zap")
 	_ = writer.Flush()
-	assert.Equal(t, `[INFO] ["this is a message from zap"]` + "\n", buffer.String())
+	assert.Equal(t, `[INFO] ["this is a message from zap"]`+"\n", buffer.String())
 }
 
 func TestRegisteredTextEncoder(t *testing.T) {
@@ -75,7 +76,6 @@ func TestRegisteredTextEncoder(t *testing.T) {
 	lg.Info("this is a message from zap")
 	assert.Contains(t, sink.String(), `["this is a message from zap"]`)
 }
-
 
 // testingSink implements zap.Sink by writing all messages to a buffer.
 type testingSink struct {
