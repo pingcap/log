@@ -37,15 +37,21 @@ func TestExport(t *testing.T) {
 	Error("Testing")
 	ts.assertMessagesContains("log_test.go:")
 
-	ts = newTestLogSpy(t)
-	logger, _, _ = InitTestLogger(ts, conf)
-	ReplaceGlobals(logger, nil)
+	ts2 := newTestLogSpy(t)
+	logger2, _, _ := InitTestLogger(ts2, conf)
+	restoreGlobal := ReplaceGlobals(logger2, nil)
 
 	newLogger := With(zap.String("name", "tester"), zap.Int64("age", 42))
 	newLogger.Info("hello")
 	newLogger.Debug("world")
-	ts.assertMessagesContains(`name=tester`)
-	ts.assertMessagesContains(`age=42`)
+	ts2.assertMessagesContains(`name=tester`)
+	ts2.assertMessagesContains(`age=42`)
+	ts.assertMessagesNotContains(`name=tester`)
+
+	restoreGlobal()
+	Info("foo b0x")
+	ts.assertLastMessageContains(`foo b0x`)
+	ts2.assertMessagesNotContains(`foo b0x`)
 }
 
 func TestZapTextEncoder(t *testing.T) {

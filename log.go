@@ -26,6 +26,7 @@ import (
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
+var globalMu sync.Mutex
 var globalLogger, globalProperties, globalSugarLogger atomic.Value
 
 var registerOnce sync.Once
@@ -126,12 +127,24 @@ func S() *zap.SugaredLogger {
 	return globalSugarLogger.Load().(*zap.SugaredLogger)
 }
 
-// ReplaceGlobals replaces the global Logger and SugaredLogger.
-// It's safe for concurrent use.
-func ReplaceGlobals(logger *zap.Logger, props *ZapProperties) {
+// ReplaceGlobals replaces the global Logger and SugaredLogger, and returns a
+// function to restore the original values. It's safe for concurrent use.
+func ReplaceGlobals(logger *zap.Logger, props *ZapProperties) func() {
+	// TODO: This globalMu can be replaced by atomic.Swap(), available since go1.17.
+	globalMu.Lock()
+	prevLogger := globalLogger.Load()
+	prevProps := globalProperties.Load()
 	globalLogger.Store(logger)
 	globalSugarLogger.Store(logger.Sugar())
 	globalProperties.Store(props)
+	globalMu.Unlock()
+	return func() {
+		if prevLogger == nil || prevProps == nil {
+			// When `ReplaceGlobals` is called first time, atomic.Value is empty.
+			return
+		}
+		ReplaceGlobals(prevLogger.(*zap.Logger), prevProps.(*ZapProperties))
+	}
 }
 
 // Sync flushes any buffered log entries.
