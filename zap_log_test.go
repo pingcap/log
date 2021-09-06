@@ -279,6 +279,12 @@ func (t *testLogSpy) assertMessagesContains(msg string) {
 	}
 }
 
+func (t *testLogSpy) assertLastMessageContains(msg string) {
+	assert.NotEmpty(t.TB, t.Messages)
+	lastMsg := t.Messages[len(t.Messages)-1]
+	assert.Contains(t.TB, lastMsg, msg)
+}
+
 func (t *testLogSpy) assertMessagesNotContains(msg string) {
 	for _, actualMsg := range t.Messages {
 		assert.NotContains(t.TB, actualMsg, msg)
