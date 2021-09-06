@@ -39,7 +39,7 @@ func TestExport(t *testing.T) {
 
 	ts2 := newTestLogSpy(t)
 	logger2, _, _ := InitTestLogger(ts2, conf)
-	restoreGlobal := ReplaceGlobals(logger2, nil)
+	ReplaceGlobals(logger2, nil)
 
 	newLogger := With(zap.String("name", "tester"), zap.Int64("age", 42))
 	newLogger.Info("hello")
@@ -47,11 +47,39 @@ func TestExport(t *testing.T) {
 	ts2.assertMessagesContains(`name=tester`)
 	ts2.assertMessagesContains(`age=42`)
 	ts.assertMessagesNotContains(`name=tester`)
+}
+
+func TestReplaceGlobals(t *testing.T) {
+	ts := newTestLogSpy(t)
+	conf := &Config{Level: "debug", DisableTimestamp: true}
+	logger, _, _ := InitTestLogger(ts, conf)
+	ReplaceGlobals(logger, nil)
+
+	Info(`foo_1`)
+	ts.assertLastMessageContains(`foo_1`)
+
+	ts2 := newTestLogSpy(t)
+	logger2, _, _ := InitTestLogger(ts2, conf)
+	restoreGlobal := ReplaceGlobals(logger2, nil)
+
+	Info(`foo_2`)
+	ts.assertMessagesNotContains(`foo_2`)
+	ts.assertLastMessageContains(`foo_1`)
+	ts2.assertLastMessageContains(`foo_2`)
+	ts2.assertMessagesNotContains(`foo_1`)
 
 	restoreGlobal()
-	Info("foo b0x")
-	ts.assertLastMessageContains(`foo b0x`)
-	ts2.assertMessagesNotContains(`foo b0x`)
+	ts.assertMessagesNotContains(`foo_2`)
+	ts.assertLastMessageContains(`foo_1`)
+	ts2.assertLastMessageContains(`foo_2`)
+	ts2.assertMessagesNotContains(`foo_1`)
+
+	Info(`foo_3`)
+	ts.assertMessagesNotContains(`foo_2`)
+	ts.assertLastMessageContains(`foo_3`)
+	ts2.assertLastMessageContains(`foo_2`)
+	ts2.assertMessagesNotContains(`foo_1`)
+	ts2.assertMessagesNotContains(`foo_3`)
 }
 
 func TestZapTextEncoder(t *testing.T) {

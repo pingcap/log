@@ -138,11 +138,12 @@ func ReplaceGlobals(logger *zap.Logger, props *ZapProperties) func() {
 	globalSugarLogger.Store(logger.Sugar())
 	globalProperties.Store(props)
 	globalMu.Unlock()
+
+	if prevLogger == nil || prevProps == nil {
+		// When `ReplaceGlobals` is called first time, atomic.Value is empty.
+		return func() {}
+	}
 	return func() {
-		if prevLogger == nil || prevProps == nil {
-			// When `ReplaceGlobals` is called first time, atomic.Value is empty.
-			return
-		}
 		ReplaceGlobals(prevLogger.(*zap.Logger), prevProps.(*ZapProperties))
 	}
 }
