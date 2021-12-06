@@ -69,7 +69,7 @@ type Config struct {
 	// ErrorOutputPath is a path to write internal logger errors to.
 	// If this field is not set, the internal logger errors will be sent to the same file as in File field.
 	// Note: if we want to output the logger errors to stderr, we can just set this field to "stderr"
-	ErrorOutputPath string
+	ErrorOutputPath string `toml:"error-output-path" json:"error-output-path"`
 }
 
 // ZapProperties records some information about zap.
