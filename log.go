@@ -40,6 +40,7 @@ func init() {
 // InitLogger initializes a zap logger.
 func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
 	var output zapcore.WriteSyncer
+	var errOutput zapcore.WriteSyncer
 	if len(cfg.File.Filename) > 0 {
 		lg, err := initFileLog(&cfg.File)
 		if err != nil {
@@ -53,7 +54,17 @@ func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, e
 		}
 		output = stdOut
 	}
-	return InitLoggerWithWriteSyncer(cfg, output, opts...)
+	if len(cfg.ErrorOutputPath) > 0 {
+		errOut, _, err := zap.Open([]string{cfg.ErrorOutputPath}...)
+		if err != nil {
+			return nil, nil, err
+		}
+		errOutput = errOut
+	} else {
+		errOutput = output
+	}
+
+	return InitLoggerWithWriteSyncer(cfg, output, errOutput, opts...)
 }
 
 func InitTestLogger(t zaptest.TestingT, cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
@@ -64,11 +75,11 @@ func InitTestLogger(t zaptest.TestingT, cfg *Config, opts ...zap.Option) (*zap.L
 		zap.ErrorOutput(writer.WithMarkFailed(true)),
 	}
 	opts = append(zapOptions, opts...)
-	return InitLoggerWithWriteSyncer(cfg, writer, opts...)
+	return InitLoggerWithWriteSyncer(cfg, writer, writer, opts...)
 }
 
 // InitLoggerWithWriteSyncer initializes a zap logger with specified write syncer.
-func InitLoggerWithWriteSyncer(cfg *Config, output zapcore.WriteSyncer, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
+func InitLoggerWithWriteSyncer(cfg *Config, output, errOutput zapcore.WriteSyncer, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
 	level := zap.NewAtomicLevel()
 	err := level.UnmarshalText([]byte(cfg.Level))
 	if err != nil {
@@ -84,7 +95,7 @@ func InitLoggerWithWriteSyncer(cfg *Config, output zapcore.WriteSyncer, opts ...
 		return nil, nil, err
 	}
 	core := NewTextCore(encoder, output, level)
-	opts = append(cfg.buildOptions(output), opts...)
+	opts = append(cfg.buildOptions(errOutput), opts...)
 	lg := zap.New(core, opts...)
 	r := &ZapProperties{
 		Core:   core,
