@@ -41,7 +41,7 @@ type FileLogConfig struct {
 type Config struct {
 	// Log level.
 	Level string `toml:"level" json:"level"`
-	// Log format. one of json or text.
+	// Log format. One of json or text.
 	Format string `toml:"format" json:"format"`
 	// Disable automatic timestamps in output.
 	DisableTimestamp bool `toml:"disable-timestamp" json:"disable-timestamp"`
