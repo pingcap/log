@@ -23,7 +23,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
-	lumberjack "gopkg.in/natefinch/lumberjack.v2"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var globalMu sync.Mutex
@@ -85,7 +85,10 @@ func InitLoggerWithWriteSyncer(cfg *Config, output, errOutput zapcore.WriteSynce
 	if err != nil {
 		return nil, nil, err
 	}
-	encoder := NewTextEncoder(cfg)
+	encoder, err := NewTextEncoder(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
 	registerOnce.Do(func() {
 		err = zap.RegisterEncoder(ZapEncodingName, func(zapcore.EncoderConfig) (zapcore.Encoder, error) {
 			return encoder, nil
