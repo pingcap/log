@@ -25,7 +25,7 @@ import (
 	"unsafe"
 
 	"github.com/pingcap/errors"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -118,28 +118,30 @@ func TestLog(t *testing.T) {
 			`<car><mirror>XML</mirror></car>]"] [duration=10s]`,
 	)
 
-	assert.PanicsWithValue(t, "unknown", func() { sugar.Panic("unknown") })
+	require.PanicsWithValue(t, "unknown", func() { sugar.Panic("unknown") })
 }
 
 func TestTimeEncoder(t *testing.T) {
 	sec := int64(1547192741)
 	nsec := int64(165279177)
 	as, err := time.LoadLocation("Asia/Shanghai")
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	tt := time.Unix(sec, nsec).In(as)
 	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
-	enc := NewTextEncoder(conf).(*textEncoder)
-	DefaultTimeEncoder(tt, enc)
-	assert.Equal(t, "2019/01/11 15:45:41.165 +08:00", enc.buf.String())
+	enc, err := NewTextEncoder(conf)
+	require.NoError(t, err)
+	DefaultTimeEncoder(tt, enc.(*textEncoder))
+	buf := enc.(*textEncoder).buf
+	require.Equal(t, "2019/01/11 15:45:41.165 +08:00", buf.String())
 
-	enc.buf.Reset()
+	buf.Reset()
 	utc, err := time.LoadLocation("UTC")
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	utcTime := tt.In(utc)
-	DefaultTimeEncoder(utcTime, enc)
-	assert.Equal(t, "2019/01/11 07:45:41.165 +00:00", enc.buf.String())
+	DefaultTimeEncoder(utcTime, enc.(*textEncoder))
+	require.Equal(t, "2019/01/11 07:45:41.165 +00:00", buf.String())
 }
 
 // See [logger-header]https://github.com/tikv/rfcs/blob/master/text/2018-12-19-unified-log-format.md#log-header-section.
@@ -156,13 +158,15 @@ func TestZapCaller(t *testing.T) {
 		"ztest_coordinator1.go:20",
 		"<unknown>",
 	}
-	conf := &Config{Level: "deug", File: FileLogConfig{}, DisableTimestamp: true}
-	enc := NewTextEncoder(conf).(*textEncoder)
+	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
+	enc, err := NewTextEncoder(conf)
+	require.NoError(t, err)
 
 	for i, d := range data {
-		ShortCallerEncoder(d, enc)
-		assert.Equal(t, expect[i], enc.buf.String())
-		enc.buf.Reset()
+		ShortCallerEncoder(d, enc.(*textEncoder))
+		buf := enc.(*textEncoder).buf
+		require.Equal(t, expect[i], buf.String())
+		buf.Reset()
 	}
 }
 
@@ -176,7 +180,7 @@ func TestRotateLog(t *testing.T) {
 		},
 	}
 	logger, _, err := InitLogger(conf)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	var data []byte
 	for i := 1; i <= 1*1024*1024; i++ {
@@ -188,7 +192,7 @@ func TestRotateLog(t *testing.T) {
 		data = data[:0]
 	}
 	files, _ := os.ReadDir(tempDir)
-	assert.Len(t, files, 2)
+	require.Len(t, files, 2)
 	_ = os.RemoveAll(tempDir)
 }
 
@@ -227,8 +231,8 @@ func TestLogJSON(t *testing.T) {
 		"backoff", time.Second,
 	)
 	logger.With(zap.String("connID", "1"), zap.String("traceID", "dse1121")).Info("new connection")
-	ts.assertMessages("{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:224\",\"message\":\"failed to fetch URL\",\"url\":\"http://example.com\",\"attempt\":3,\"backoff\":\"1s\"}",
-		"{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:229\",\"message\":\"new connection\",\"connID\":\"1\",\"traceID\":\"dse1121\"}")
+	ts.assertMessages("{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:228\",\"message\":\"failed to fetch URL\",\"url\":\"http://example.com\",\"attempt\":3,\"backoff\":\"1s\"}",
+		"{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:233\",\"message\":\"new connection\",\"connID\":\"1\",\"traceID\":\"dse1121\"}")
 }
 
 // testLogSpy is a testing.TB that captures logged messages.
@@ -270,23 +274,23 @@ func (t *testLogSpy) Logf(format string, args ...interface{}) {
 }
 
 func (t *testLogSpy) assertMessages(msgs ...string) {
-	assert.Equal(t.TB, msgs, t.Messages)
+	require.Equal(t.TB, msgs, t.Messages)
 }
 
 func (t *testLogSpy) assertMessagesContains(msg string) {
 	for _, actualMsg := range t.Messages {
-		assert.Contains(t.TB, actualMsg, msg)
+		require.Contains(t.TB, actualMsg, msg)
 	}
 }
 
 func (t *testLogSpy) assertLastMessageContains(msg string) {
-	assert.NotEmpty(t.TB, t.Messages)
+	require.NotEmpty(t.TB, t.Messages)
 	lastMsg := t.Messages[len(t.Messages)-1]
-	assert.Contains(t.TB, lastMsg, msg)
+	require.Contains(t.TB, lastMsg, msg)
 }
 
 func (t *testLogSpy) assertMessagesNotContains(msg string) {
 	for _, actualMsg := range t.Messages {
-		assert.NotContains(t.TB, actualMsg, msg)
+		require.NotContains(t.TB, actualMsg, msg)
 	}
 }

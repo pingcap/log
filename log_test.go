@@ -20,7 +20,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -87,12 +87,13 @@ func TestZapTextEncoder(t *testing.T) {
 
 	var buffer bytes.Buffer
 	writer := bufio.NewWriter(&buffer)
-	encoder := NewTextEncoder(conf)
+	encoder, err := NewTextEncoder(conf)
+	require.NoError(t, err)
 	logger := zap.New(zapcore.NewCore(encoder, zapcore.AddSync(writer), zapcore.InfoLevel)).Sugar()
 
 	logger.Info("this is a message from zap")
 	_ = writer.Flush()
-	assert.Equal(t, `[INFO] ["this is a message from zap"]`+"\n", buffer.String())
+	require.Equal(t, `[INFO] ["this is a message from zap"]`+"\n", buffer.String())
 }
 
 func TestRegisteredTextEncoder(t *testing.T) {
@@ -105,10 +106,10 @@ func TestRegisteredTextEncoder(t *testing.T) {
 	lgc.OutputPaths = []string{"memory://"}
 
 	lg, err := lgc.Build()
-	assert.Nil(t, err)
+	require.Nil(t, err)
 
 	lg.Info("this is a message from zap")
-	assert.Contains(t, sink.String(), `["this is a message from zap"]`)
+	require.Contains(t, sink.String(), `["this is a message from zap"]`)
 }
 
 // testingSink implements zap.Sink by writing all messages to a buffer.

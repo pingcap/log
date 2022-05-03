@@ -137,7 +137,7 @@ type textEncoder struct {
 
 // NewTextEncoder creates a fast, low-allocation Text encoder. The encoder
 // appropriately escapes all field keys and values.
-func NewTextEncoder(cfg *Config) zapcore.Encoder {
+func NewTextEncoder(cfg *Config) (zapcore.Encoder, error) {
 	cc := zapcore.EncoderConfig{
 		// Keys can be anything except the empty string.
 		TimeKey:        "time",
@@ -162,11 +162,11 @@ func NewTextEncoder(cfg *Config) zapcore.Encoder {
 			buf:                 _pool.Get(),
 			spaced:              false,
 			disableErrorVerbose: cfg.DisableErrorVerbose,
-		}
+		}, nil
 	case "json":
-		return zapcore.NewJSONEncoder(cc)
+		return zapcore.NewJSONEncoder(cc), nil
 	default:
-		panic(fmt.Sprintf("unsupport log format: %s", cfg.Format))
+		return nil, fmt.Errorf("unsupport log format: %s", cfg.Format)
 	}
 }
 
