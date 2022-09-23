@@ -40,7 +40,7 @@ func (n username) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 func TestLog(t *testing.T) {
 	ts := newTestLogSpy(t)
 	conf := &Config{Level: "debug", DisableTimestamp: true}
-	logger, _, _ := InitTestLogger(ts, conf)
+	logger, _, _ := InitTestLogger(ts, conf, zap.AddCallerSkip(-1))
 	sugar := logger.Sugar()
 	defer func() {
 		_ = sugar.Sync()
@@ -199,7 +199,7 @@ func TestRotateLog(t *testing.T) {
 func TestErrorLog(t *testing.T) {
 	ts := newTestLogSpy(t)
 	conf := &Config{Level: "debug", DisableTimestamp: true}
-	logger, _, _ := InitTestLogger(ts, conf)
+	logger, _, _ := InitTestLogger(ts, conf, zap.AddCallerSkip(-1))
 	logger.Error("", zap.NamedError("err", errors.New("log-stack-test")))
 	ts.assertMessagesContains("[err=log-stack-test]")
 	ts.assertMessagesContains("] [errVerbose=\"")
@@ -212,7 +212,7 @@ func TestWithOptions(t *testing.T) {
 		DisableTimestamp:    true,
 		DisableErrorVerbose: true,
 	}
-	logger, _, _ := InitTestLogger(ts, conf, zap.AddStacktrace(zapcore.FatalLevel))
+	logger, _, _ := InitTestLogger(ts, conf, zap.AddStacktrace(zapcore.FatalLevel), zap.AddCallerSkip(-1))
 	logger.Error("Testing", zap.Error(errors.New("log-with-option")))
 	ts.assertMessagesNotContains("errorVerbose")
 	ts.assertMessagesNotContains("stack")
@@ -221,7 +221,7 @@ func TestWithOptions(t *testing.T) {
 func TestLogJSON(t *testing.T) {
 	ts := newTestLogSpy(t)
 	conf := &Config{Level: "debug", DisableTimestamp: true, Format: "json"}
-	logger, _, _ := InitTestLogger(ts, conf, zap.AddStacktrace(zapcore.FatalLevel))
+	logger, _, _ := InitTestLogger(ts, conf, zap.AddStacktrace(zapcore.FatalLevel), zap.AddCallerSkip(-1))
 	sugar := logger.Sugar()
 	defer sugar.Sync()
 
