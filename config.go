@@ -80,7 +80,7 @@ type ZapProperties struct {
 }
 
 func (cfg *Config) buildOptions(errSink zapcore.WriteSyncer) []zap.Option {
-	opts := []zap.Option{zap.ErrorOutput(errSink)}
+	opts := []zap.Option{zap.ErrorOutput(errSink), zap.AddCallerSkip(1)}
 
 	if cfg.Development {
 		opts = append(opts, zap.Development())
