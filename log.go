@@ -30,6 +30,7 @@ var globalMu sync.Mutex
 var globalLogger, globalProperties, globalSugarLogger atomic.Value
 
 var registerOnce sync.Once
+var initOnce sync.Once
 
 func init() {
 	conf := &Config{Level: "info", File: FileLogConfig{}}
@@ -132,6 +133,10 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 // L returns the global Logger, which can be reconfigured with ReplaceGlobals.
 // It's safe for concurrent use.
 func L() *zap.Logger {
+	log := globalLogger.Load().(*zap.Logger)
+	initOnce.Do(func() {
+		globalLogger.Store(log.WithOptions(zap.AddCallerSkip(1)))
+	})
 	return globalLogger.Load().(*zap.Logger)
 }
 
