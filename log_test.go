@@ -36,6 +36,10 @@ func TestExport(t *testing.T) {
 	Warn("Testing")
 	Error("Testing")
 	ts.assertMessagesContains("log_test.go:")
+	L().Info("Testing")
+	ts.assertMessagesContains("log_test.go:")
+	L().WithOptions(zap.AddCallerSkip(1)).Info("Testing")
+	ts.assertLastMessageNotContains("log_test.go:")
 
 	ts2 := newTestLogSpy(t)
 	logger2, _, _ := InitTestLogger(ts2, conf)
