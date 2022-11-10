@@ -129,6 +129,8 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 	}, nil
 }
 
+// ll returns the sub global logger, which has 'zap.AddCallerSkip(1)' than the global logger.
+// It's safe for concurrent use.
 func ll() *zap.Logger {
 	return subGlobalLogger.Load().(*zap.Logger)
 }
