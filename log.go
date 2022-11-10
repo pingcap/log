@@ -27,10 +27,9 @@ import (
 )
 
 var globalMu sync.Mutex
-var globalLogger, globalProperties, globalSugarLogger atomic.Value
+var globalLogger, subGlobalLogger, globalProperties, globalSugarLogger atomic.Value
 
 var registerOnce sync.Once
-var initOnce sync.Once
 
 func init() {
 	conf := &Config{Level: "info", File: FileLogConfig{}}
@@ -130,13 +129,15 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 	}, nil
 }
 
+// ll returns the sub global logger, which has 'zap.AddCallerSkip(1)' than the global logger.
+// It's safe for concurrent use.
+func ll() *zap.Logger {
+	return subGlobalLogger.Load().(*zap.Logger)
+}
+
 // L returns the global Logger, which can be reconfigured with ReplaceGlobals.
 // It's safe for concurrent use.
 func L() *zap.Logger {
-	log := globalLogger.Load().(*zap.Logger)
-	initOnce.Do(func() {
-		globalLogger.Store(log.WithOptions(zap.AddCallerSkip(1)))
-	})
 	return globalLogger.Load().(*zap.Logger)
 }
 
@@ -154,6 +155,7 @@ func ReplaceGlobals(logger *zap.Logger, props *ZapProperties) func() {
 	prevLogger := globalLogger.Load()
 	prevProps := globalProperties.Load()
 	globalLogger.Store(logger)
+	subGlobalLogger.Store(logger.WithOptions(zap.AddCallerSkip(1)))
 	globalSugarLogger.Store(logger.Sugar())
 	globalProperties.Store(props)
 	globalMu.Unlock()
