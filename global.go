@@ -65,6 +65,10 @@ func Fatal(msg string, fields ...zap.Field) {
 
 // With creates a child logger and adds structured context to it.
 // Fields added to the child don't affect the parent, and vice versa.
+//
+// Deprecated: With should not add caller skip, since it's not a logging function.
+// Please use log.L().With instead. With is kept for compatibility.
+// See https://github.com/pingcap/log/issues/32 for more details.
 func With(fields ...zap.Field) *zap.Logger {
 	return L().WithOptions(zap.AddCallerSkip(1)).With(fields...)
 }
