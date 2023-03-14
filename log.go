@@ -97,6 +97,11 @@ func InitLoggerWithWriteSyncer(cfg *Config, output, errOutput zapcore.WriteSynce
 	if err != nil {
 		return nil, nil, err
 	}
+	if cfg.Nonblock {
+		output = Nonblock(output)
+		errOutput = Nonblock(errOutput)
+	}
+
 	core := NewTextCore(encoder, output, level)
 	opts = append(cfg.buildOptions(errOutput), opts...)
 	lg := zap.New(core, opts...)
@@ -106,6 +111,50 @@ func InitLoggerWithWriteSyncer(cfg *Config, output, errOutput zapcore.WriteSynce
 		Level:  level,
 	}
 	return lg, r, nil
+}
+
+// Nonblock wraps a WriteSyncer make it safe for concurrent use, just like zapcore.Lock()
+func Nonblock(ws zapcore.WriteSyncer) zapcore.WriteSyncer {
+	r := &nonblockWrapper{
+		ws:      ws,
+		writeCh: make(chan []byte, 4096),
+		syncCh:  make(chan struct{}, 512),
+	}
+	go r.bgWorkLoop()
+	return r
+}
+
+type nonblockWrapper struct {
+	ws      zapcore.WriteSyncer
+	writeCh chan []byte
+	syncCh  chan struct{}
+}
+
+func (s *nonblockWrapper) bgWorkLoop() {
+	for {
+		select {
+		case bs := <-s.writeCh:
+			s.ws.Write(bs)
+		case <-s.syncCh:
+			s.ws.Sync()
+		}
+	}
+}
+
+func (s *nonblockWrapper) Write(bs []byte) (int, error) {
+	select {
+	case s.writeCh <- bs:
+	default:
+	}
+	return len(bs), nil
+}
+
+func (s *nonblockWrapper) Sync() error {
+	select {
+	case s.syncCh <- struct{}{}:
+	default:
+	}
+	return nil
 }
 
 // initFileLog initializes file based logging options.

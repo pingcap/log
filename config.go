@@ -70,6 +70,9 @@ type Config struct {
 	// If this field is not set, the internal logger errors will be sent to the same file as in File field.
 	// Note: if we want to output the logger errors to stderr, we can just set this field to "stderr"
 	ErrorOutputPath string `toml:"error-output-path" json:"error-output-path"`
+	// Nonblock makes the write operation nonblock.
+	// Note: the log might loss if the write operation would block, and error is ignored.
+	Nonblock bool `toml:"nonblock" json:"nonblock"`
 }
 
 // ZapProperties records some information about zap.
