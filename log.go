@@ -133,7 +133,7 @@ type lockWithTimeoutWrapper struct {
 	timeout int
 }
 
-// getLockOrBlock returns true when get block success, and false otherwise.
+// getLockOrBlock returns true when get lock success, and false otherwise.
 func (s *lockWithTimeoutWrapper) getLockOrBlock() bool {
 	for i := 0; i < s.timeout; {
 		select {
