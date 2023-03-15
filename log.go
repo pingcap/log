@@ -19,6 +19,7 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -97,9 +98,9 @@ func InitLoggerWithWriteSyncer(cfg *Config, output, errOutput zapcore.WriteSynce
 	if err != nil {
 		return nil, nil, err
 	}
-	if cfg.Nonblock {
-		output = Nonblock(output)
-		errOutput = Nonblock(errOutput)
+	if cfg.Timeout > 0 {
+		output = LockWithTimeout(output, cfg.Timeout)
+		errOutput = LockWithTimeout(errOutput, cfg.Timeout)
 	}
 
 	core := NewTextCore(encoder, output, level)
@@ -113,48 +114,60 @@ func InitLoggerWithWriteSyncer(cfg *Config, output, errOutput zapcore.WriteSynce
 	return lg, r, nil
 }
 
-// Nonblock wraps a WriteSyncer make it safe for concurrent use, just like zapcore.Lock()
-func Nonblock(ws zapcore.WriteSyncer) zapcore.WriteSyncer {
-	r := &nonblockWrapper{
+// LockWithTimeout wraps a WriteSyncer make it safe for concurrent use, just like zapcore.Lock()
+// timeout seconds.
+func LockWithTimeout(ws zapcore.WriteSyncer, timeout int) zapcore.WriteSyncer {
+	r := &lockWithTimeoutWrapper{
 		ws:      ws,
-		writeCh: make(chan []byte, 4096),
-		syncCh:  make(chan struct{}, 512),
+		lock:    make(chan struct{}, 1),
+		t:       time.NewTicker(time.Second),
+		timeout: timeout,
 	}
-	go r.bgWorkLoop()
 	return r
 }
 
-type nonblockWrapper struct {
+type lockWithTimeoutWrapper struct {
 	ws      zapcore.WriteSyncer
-	writeCh chan []byte
-	syncCh  chan struct{}
+	lock    chan struct{}
+	t       *time.Ticker
+	timeout int
 }
 
-func (s *nonblockWrapper) bgWorkLoop() {
-	for {
+// getLockOrBlock returns true when get block success, and false otherwise.
+func (s *lockWithTimeoutWrapper) getLockOrBlock() bool {
+	for i := 0; i < s.timeout; {
 		select {
-		case bs := <-s.writeCh:
-			s.ws.Write(bs)
-		case <-s.syncCh:
-			s.ws.Sync()
+		case s.lock <- struct{}{}:
+			return true
+		case <-s.t.C:
+			i++
 		}
 	}
+	return false
 }
 
-func (s *nonblockWrapper) Write(bs []byte) (int, error) {
-	select {
-	case s.writeCh <- bs:
-	default:
-	}
-	return len(bs), nil
+func (s *lockWithTimeoutWrapper) unlock() {
+	<-s.lock
 }
 
-func (s *nonblockWrapper) Sync() error {
-	select {
-	case s.syncCh <- struct{}{}:
-	default:
+func (s *lockWithTimeoutWrapper) Write(bs []byte) (int, error) {
+	succ := s.getLockOrBlock()
+	if !succ {
+		panic("write log hang")
 	}
-	return nil
+	defer s.unlock()
+
+	return s.ws.Write(bs)
+}
+
+func (s *lockWithTimeoutWrapper) Sync() error {
+	succ := s.getLockOrBlock()
+	if !succ {
+		panic("sync log hang")
+	}
+	defer s.unlock()
+
+	return s.ws.Sync()
 }
 
 // initFileLog initializes file based logging options.

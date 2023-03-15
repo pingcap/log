@@ -125,3 +125,33 @@ type testingSink struct {
 // method is provided by the embedded buffer.
 func (s *testingSink) Close() error { return nil }
 func (s *testingSink) Sync() error  { return nil }
+
+func TestTimeout(t *testing.T) {
+	sink := &testingSink{new(bytes.Buffer)}
+	ws := LockWithTimeout(sink, 3)
+	ws.Write([]byte("abc"))
+	ws.Sync()
+	require.Contains(t, sink.String(), `abc`)
+
+	var h hang
+	ws = LockWithTimeout(zapcore.AddSync(h), 3)
+	panicCh := make(chan struct{}, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			defer func() {
+				if x := recover(); x != nil {
+					panicCh <- struct{}{}
+				}
+			}()
+			ws.Write([]byte("abc")) // This should not make the caller hang
+		}()
+	}
+	<-panicCh
+}
+
+type hang struct{}
+
+func (_ hang) Write(_ []byte) (int, error) {
+	<-make(chan struct{}) // block forever
+	return 0, nil
+}
