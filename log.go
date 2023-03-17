@@ -16,9 +16,11 @@ package log
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -97,6 +99,11 @@ func InitLoggerWithWriteSyncer(cfg *Config, output, errOutput zapcore.WriteSynce
 	if err != nil {
 		return nil, nil, err
 	}
+	if cfg.Timeout > 0 {
+		output = LockWithTimeout(output, cfg.Timeout)
+		errOutput = LockWithTimeout(errOutput, cfg.Timeout)
+	}
+
 	core := NewTextCore(encoder, output, level)
 	opts = append(cfg.buildOptions(errOutput), opts...)
 	lg := zap.New(core, opts...)
@@ -106,6 +113,62 @@ func InitLoggerWithWriteSyncer(cfg *Config, output, errOutput zapcore.WriteSynce
 		Level:  level,
 	}
 	return lg, r, nil
+}
+
+// LockWithTimeout wraps a WriteSyncer make it safe for concurrent use, just like zapcore.Lock()
+// timeout seconds.
+func LockWithTimeout(ws zapcore.WriteSyncer, timeout int) zapcore.WriteSyncer {
+	r := &lockWithTimeoutWrapper{
+		ws:      ws,
+		lock:    make(chan struct{}, 1),
+		t:       time.NewTicker(time.Second),
+		timeout: timeout,
+	}
+	return r
+}
+
+type lockWithTimeoutWrapper struct {
+	ws      zapcore.WriteSyncer
+	lock    chan struct{}
+	t       *time.Ticker
+	timeout int
+}
+
+// getLockOrBlock returns true when get lock success, and false otherwise.
+func (s *lockWithTimeoutWrapper) getLockOrBlock() bool {
+	for i := 0; i < s.timeout; {
+		select {
+		case s.lock <- struct{}{}:
+			return true
+		case <-s.t.C:
+			i++
+		}
+	}
+	return false
+}
+
+func (s *lockWithTimeoutWrapper) unlock() {
+	<-s.lock
+}
+
+func (s *lockWithTimeoutWrapper) Write(bs []byte) (int, error) {
+	succ := s.getLockOrBlock()
+	if !succ {
+		panic(fmt.Sprintf("Timeout of %ds when trying to write log", s.timeout))
+	}
+	defer s.unlock()
+
+	return s.ws.Write(bs)
+}
+
+func (s *lockWithTimeoutWrapper) Sync() error {
+	succ := s.getLockOrBlock()
+	if !succ {
+		panic(fmt.Sprintf("Timeout of %ds when trying to sync log", s.timeout))
+	}
+	defer s.unlock()
+
+	return s.ws.Sync()
 }
 
 // initFileLog initializes file based logging options.
