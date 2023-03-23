@@ -189,6 +189,7 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 		MaxBackups: cfg.MaxBackups,
 		MaxAge:     cfg.MaxDays,
 		LocalTime:  true,
+		Compress:   cfg.Compress,
 	}, nil
 }
 
