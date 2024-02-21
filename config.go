@@ -35,6 +35,8 @@ type FileLogConfig struct {
 	MaxDays int `toml:"max-days" json:"max-days"`
 	// Maximum number of old log files to retain.
 	MaxBackups int `toml:"max-backups" json:"max-backups"`
+	// Compress function for rotated files.
+	Compress string `toml:"compress" json:"compress"`
 }
 
 // Config serializes log related config in toml/json.
@@ -103,7 +105,7 @@ func (cfg *Config) buildOptions(errSink zapcore.WriteSyncer) []zap.Option {
 
 	if cfg.Sampling != nil {
 		opts = append(opts, zap.WrapCore(func(core zapcore.Core) zapcore.Core {
-			return zapcore.NewSampler(core, time.Second, int(cfg.Sampling.Initial), int(cfg.Sampling.Thereafter))
+			return zapcore.NewSamplerWithOptions(core, time.Second, int(cfg.Sampling.Initial), int(cfg.Sampling.Thereafter))
 		}))
 	}
 	return opts
