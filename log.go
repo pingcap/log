@@ -182,6 +182,16 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 		cfg.MaxSize = defaultLogMaxSize
 	}
 
+	compress := false
+	switch cfg.Compress {
+	case "":
+		compress = false
+	case "gzip":
+		compress = true
+	default:
+		return nil, fmt.Errorf("can't set compress to `%s`", cfg.Compress)
+	}
+
 	// use lumberjack to logrotate
 	return &lumberjack.Logger{
 		Filename:   cfg.Filename,
@@ -189,6 +199,7 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 		MaxBackups: cfg.MaxBackups,
 		MaxAge:     cfg.MaxDays,
 		LocalTime:  true,
+		Compress:   compress,
 	}, nil
 }
 

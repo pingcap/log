@@ -235,6 +235,58 @@ func TestLogJSON(t *testing.T) {
 		"{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:233\",\"message\":\"new connection\",\"connID\":\"1\",\"traceID\":\"dse1121\"}")
 }
 
+func TestRotateLogWithCompress(t *testing.T) {
+	tempDir := t.TempDir()
+	conf := &Config{
+		Level: "info",
+		File: FileLogConfig{
+			Filename: tempDir + "/test.log",
+			MaxSize:  1,
+			Compress: "gzip",
+		},
+	}
+	logger, _, err := InitLogger(conf)
+	require.NoError(t, err)
+
+	var data []byte
+	for i := 1; i <= 1*1024*1024; i++ {
+		if i%1000 != 0 {
+			data = append(data, 'd')
+			continue
+		}
+		logger.Info(string(data))
+		data = data[:0]
+	}
+	// Waiting rotation finished, it's async
+	for {
+		files, _ := os.ReadDir(tempDir)
+		if len(files) == 2 {
+			for _, f := range files {
+				info, err := f.Info()
+				require.NoError(t, err)
+				// Many duplicate logs, the file size after compress should less than 512KB
+				require.Less(t, info.Size(), int64(512*1024))
+			}
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestCompressError(t *testing.T) {
+	tempDir := t.TempDir()
+	conf := &Config{
+		Level: "info",
+		File: FileLogConfig{
+			Filename: tempDir + "/test.log",
+			MaxSize:  1,
+			Compress: "xxx",
+		},
+	}
+	_, _, err := InitLogger(conf)
+	require.Error(t, err)
+}
+
 // testLogSpy is a testing.TB that captures logged messages.
 type testLogSpy struct {
 	testing.TB
