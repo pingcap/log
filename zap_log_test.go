@@ -273,6 +273,20 @@ func TestRotateLogWithCompress(t *testing.T) {
 	}
 }
 
+func TestCompressError(t *testing.T) {
+	tempDir := t.TempDir()
+	conf := &Config{
+		Level: "info",
+		File: FileLogConfig{
+			Filename: tempDir + "/test.log",
+			MaxSize:  1,
+			Compress: "xxx",
+		},
+	}
+	_, _, err := InitLogger(conf)
+	require.Error(t, err)
+}
+
 // testLogSpy is a testing.TB that captures logged messages.
 type testLogSpy struct {
 	testing.TB
