@@ -8,42 +8,44 @@
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
 package log
 
 import (
+	"context"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-// ZapEncodingName is the encoder name registered in zap
-var ZapEncodingName = "pingcap-log"
+type ctxLogKeyType struct{}
+
+var CtxLogKey = ctxLogKeyType{}
 
 // Debug logs a message at DebugLevel. The message includes any fields passed
 // at the log site, as well as any fields accumulated on the logger.
 func Debug(msg string, fields ...zap.Field) {
-	ll().Debug(msg, fields...)
+	L().Debug(msg, fields...)
 }
 
 // Info logs a message at InfoLevel. The message includes any fields passed
 // at the log site, as well as any fields accumulated on the logger.
 func Info(msg string, fields ...zap.Field) {
-	ll().Info(msg, fields...)
+	L().Info(msg, fields...)
 }
 
 // Warn logs a message at WarnLevel. The message includes any fields passed
 // at the log site, as well as any fields accumulated on the logger.
 func Warn(msg string, fields ...zap.Field) {
-	ll().Warn(msg, fields...)
+	L().Warn(msg, fields...)
 }
 
 // Error logs a message at ErrorLevel. The message includes any fields passed
 // at the log site, as well as any fields accumulated on the logger.
 func Error(msg string, fields ...zap.Field) {
-	ll().Error(msg, fields...)
+	L().Error(msg, fields...)
 }
 
 // Panic logs a message at PanicLevel. The message includes any fields passed
@@ -51,7 +53,7 @@ func Error(msg string, fields ...zap.Field) {
 //
 // The logger then panics, even if logging at PanicLevel is disabled.
 func Panic(msg string, fields ...zap.Field) {
-	ll().Panic(msg, fields...)
+	L().Panic(msg, fields...)
 }
 
 // Fatal logs a message at FatalLevel. The message includes any fields passed
@@ -60,25 +62,148 @@ func Panic(msg string, fields ...zap.Field) {
 // The logger then calls os.Exit(1), even if logging at FatalLevel is
 // disabled.
 func Fatal(msg string, fields ...zap.Field) {
-	ll().Fatal(msg, fields...)
+	L().Fatal(msg, fields...)
+}
+
+// RatedDebug print logs at debug level
+// it limit log print to avoid too many logs
+// return true if log successfully
+func RatedDebug(cost float64, msg string, fields ...zap.Field) bool {
+	if R().CheckCredit(cost) {
+		L().Debug(msg, fields...)
+		return true
+	}
+	return false
+}
+
+// RatedInfo print logs at info level
+// it limit log print to avoid too many logs
+// return true if log successfully
+func RatedInfo(cost float64, msg string, fields ...zap.Field) bool {
+	if R().CheckCredit(cost) {
+		L().Info(msg, fields...)
+		return true
+	}
+	return false
+}
+
+// RatedWarn print logs at warn level
+// it limit log print to avoid too many logs
+// return true if log successfully
+func RatedWarn(cost float64, msg string, fields ...zap.Field) bool {
+	if R().CheckCredit(cost) {
+		L().Warn(msg, fields...)
+		return true
+	}
+	return false
 }
 
 // With creates a child logger and adds structured context to it.
 // Fields added to the child don't affect the parent, and vice versa.
-//
-// Deprecated: With should not add caller skip, since it's not a logging function.
-// Please use log.L().With instead. With is kept for compatibility.
-// See https://github.com/pingcap/log/issues/32 for more details.
-func With(fields ...zap.Field) *zap.Logger {
-	return L().WithOptions(zap.AddCallerSkip(1)).With(fields...)
+func With(fields ...zap.Field) *MLogger {
+	return &MLogger{
+		Logger: L().With(fields...).WithOptions(zap.AddCallerSkip(-1)),
+	}
 }
 
 // SetLevel alters the logging level.
 func SetLevel(l zapcore.Level) {
-	globalProperties.Load().(*ZapProperties).Level.SetLevel(l)
+	_globalP.Load().(*ZapProperties).Level.SetLevel(l)
 }
 
 // GetLevel gets the logging level.
 func GetLevel() zapcore.Level {
-	return globalProperties.Load().(*ZapProperties).Level.Level()
+	return _globalP.Load().(*ZapProperties).Level.Level()
+}
+
+// WithTraceID returns a context with trace_id attached
+func WithTraceID(ctx context.Context, traceID string) context.Context {
+	return WithFields(ctx, zap.String("traceID", traceID))
+}
+
+// WithReqID adds given reqID field to the logger in ctx
+func WithReqID(ctx context.Context, reqID int64) context.Context {
+	fields := []zap.Field{zap.Int64("reqID", reqID)}
+	return WithFields(ctx, fields...)
+}
+
+// WithModule adds given module field to the logger in ctx
+func WithModule(ctx context.Context, module string) context.Context {
+	fields := []zap.Field{zap.String("module", module)}
+	return WithFields(ctx, fields...)
+}
+
+// WithFields returns a context with fields attached
+func WithFields(ctx context.Context, fields ...zap.Field) context.Context {
+	var zlogger *zap.Logger
+	if ctxLogger, ok := ctx.Value(CtxLogKey).(*MLogger); ok {
+		zlogger = ctxLogger.Logger
+	} else {
+		zlogger = ctxL()
+	}
+	mLogger := &MLogger{
+		Logger: zlogger.With(fields...),
+	}
+	return context.WithValue(ctx, CtxLogKey, mLogger)
+}
+
+// Ctx returns a logger which will log contextual messages attached in ctx
+func Ctx(ctx context.Context) *MLogger {
+	if ctx == nil {
+		return &MLogger{Logger: ctxL()}
+	}
+	if ctxLogger, ok := ctx.Value(CtxLogKey).(*MLogger); ok {
+		return ctxLogger
+	}
+	return &MLogger{Logger: ctxL()}
+}
+
+// withLogLevel returns ctx with a leveled logger, notes that it will overwrite logger previous attached!
+func withLogLevel(ctx context.Context, level zapcore.Level) context.Context {
+	var zlogger *zap.Logger
+	switch level {
+	case zap.DebugLevel:
+		zlogger = debugL()
+	case zap.InfoLevel:
+		zlogger = infoL()
+	case zap.WarnLevel:
+		zlogger = warnL()
+	case zap.ErrorLevel:
+		zlogger = errorL()
+	case zap.FatalLevel:
+		zlogger = fatalL()
+	default:
+		zlogger = L()
+	}
+	return context.WithValue(ctx, CtxLogKey, &MLogger{Logger: zlogger})
+}
+
+// WithDebugLevel returns context with a debug level enabled logger.
+// Notes that it will overwrite previous attached logger within context
+func WithDebugLevel(ctx context.Context) context.Context {
+	return withLogLevel(ctx, zapcore.DebugLevel)
+}
+
+// WithInfoLevel returns context with a info level enabled logger.
+// Notes that it will overwrite previous attached logger within context
+func WithInfoLevel(ctx context.Context) context.Context {
+	return withLogLevel(ctx, zapcore.InfoLevel)
+}
+
+// WithWarnLevel returns context with a warning level enabled logger.
+// Notes that it will overwrite previous attached logger within context
+func WithWarnLevel(ctx context.Context) context.Context {
+	return withLogLevel(ctx, zapcore.WarnLevel)
+}
+
+// WithErrorLevel returns context with a error level enabled logger.
+// Notes that it will overwrite previous attached logger within context
+func WithErrorLevel(ctx context.Context) context.Context {
+	return withLogLevel(ctx, zapcore.ErrorLevel)
+}
+
+// WithFatalLevel returns context with a fatal level enabled logger.
+// Notes that it will overwrite previous attached logger within context
+func WithFatalLevel(ctx context.Context) context.Context {
+	return withLogLevel(ctx, zapcore.FatalLevel)
 }

@@ -8,7 +8,6 @@
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
@@ -27,6 +26,8 @@ const (
 
 // FileLogConfig serializes file log related config in toml/json.
 type FileLogConfig struct {
+	// Log rootpath
+	RootPath string `toml:"rootpath" json:"rootpath"`
 	// Log filename, leave empty to disable file log.
 	Filename string `toml:"filename" json:"filename"`
 	// Max size for a single file, in MB.
@@ -35,19 +36,20 @@ type FileLogConfig struct {
 	MaxDays int `toml:"max-days" json:"max-days"`
 	// Maximum number of old log files to retain.
 	MaxBackups int `toml:"max-backups" json:"max-backups"`
-	// Compress function for rotated files.
-	// Currently only `gzip` and empty are supported, empty means compression disabled.
-	Compress string `toml:"compress" json:"compress"`
 }
 
 // Config serializes log related config in toml/json.
 type Config struct {
 	// Log level.
 	Level string `toml:"level" json:"level"`
-	// Log format. One of json or text.
+	// grpc log level
+	GrpcLevel string `toml:"grpc-level" json:"grpc-level"`
+	// Log format. one of json, text, or console.
 	Format string `toml:"format" json:"format"`
 	// Disable automatic timestamps in output.
 	DisableTimestamp bool `toml:"disable-timestamp" json:"disable-timestamp"`
+	// Stdout enable or not.
+	Stdout bool `toml:"stdout" json:"stdout"`
 	// File log config.
 	File FileLogConfig `toml:"file" json:"file"`
 	// Development puts the logger in development mode, which changes the
@@ -69,13 +71,6 @@ type Config struct {
 	//
 	// Values configured here are per-second. See zapcore.NewSampler for details.
 	Sampling *zap.SamplingConfig `toml:"sampling" json:"sampling"`
-	// ErrorOutputPath is a path to write internal logger errors to.
-	// If this field is not set, the internal logger errors will be sent to the same file as in File field.
-	// Note: if we want to output the logger errors to stderr, we can just set this field to "stderr"
-	ErrorOutputPath string `toml:"error-output-path" json:"error-output-path"`
-	// Timeout for writing log, if TiDB hang on writing log, make it panic.
-	// The value is seconds, 0 means no timeout
-	Timeout int `toml:"timeout" json:"timeout"`
 }
 
 // ZapProperties records some information about zap.
@@ -83,6 +78,10 @@ type ZapProperties struct {
 	Core   zapcore.Core
 	Syncer zapcore.WriteSyncer
 	Level  zap.AtomicLevel
+}
+
+func newZapTextEncoder(cfg *Config) zapcore.Encoder {
+	return NewTextEncoderByConfig(cfg)
 }
 
 func (cfg *Config) buildOptions(errSink zapcore.WriteSyncer) []zap.Option {
@@ -106,7 +105,7 @@ func (cfg *Config) buildOptions(errSink zapcore.WriteSyncer) []zap.Option {
 
 	if cfg.Sampling != nil {
 		opts = append(opts, zap.WrapCore(func(core zapcore.Core) zapcore.Core {
-			return zapcore.NewSamplerWithOptions(core, time.Second, int(cfg.Sampling.Initial), int(cfg.Sampling.Thereafter))
+			return zapcore.NewSamplerWithOptions(core, time.Second, cfg.Sampling.Initial, cfg.Sampling.Thereafter, zapcore.SamplerHook(cfg.Sampling.Hook))
 		}))
 	}
 	return opts

@@ -8,7 +8,6 @@
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
@@ -39,7 +38,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -62,35 +60,7 @@ func DefaultTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
 
 // ShortCallerEncoder serializes a caller in file:line format.
 func ShortCallerEncoder(caller zapcore.EntryCaller, enc zapcore.PrimitiveArrayEncoder) {
-	enc.AppendString(getCallerString(caller))
-}
-
-func getCallerString(ec zapcore.EntryCaller) string {
-	if !ec.Defined {
-		return "<unknown>"
-	}
-
-	idx := strings.LastIndexByte(ec.File, '/')
-	buf := _pool.Get()
-	for i := idx + 1; i < len(ec.File); i++ {
-		b := ec.File[i]
-		switch {
-		case b >= 'A' && b <= 'Z':
-			buf.AppendByte(b)
-		case b >= 'a' && b <= 'z':
-			buf.AppendByte(b)
-		case b >= '0' && b <= '9':
-			buf.AppendByte(b)
-		case b == '.' || b == '-' || b == '_':
-			buf.AppendByte(b)
-		default:
-		}
-	}
-	buf.AppendByte(':')
-	buf.AppendInt(int64(ec.Line))
-	caller := buf.String()
-	buf.Free()
-	return caller
+	enc.AppendString(caller.TrimmedPath())
 }
 
 // For JSON-escaping; see textEncoder.safeAddString below.
@@ -135,9 +105,18 @@ type textEncoder struct {
 	reflectEnc *json.Encoder
 }
 
-// NewTextEncoder creates a fast, low-allocation Text encoder. The encoder
+func NewTextEncoder(encoderConfig *zapcore.EncoderConfig, spaced bool, disableErrorVerbose bool) zapcore.Encoder {
+	return &textEncoder{
+		EncoderConfig:       encoderConfig,
+		buf:                 _pool.Get(),
+		spaced:              spaced,
+		disableErrorVerbose: disableErrorVerbose,
+	}
+}
+
+// NewTextEncoderByConfig creates a fast, low-allocation Text encoder with config. The encoder
 // appropriately escapes all field keys and values.
-func NewTextEncoder(cfg *Config) (zapcore.Encoder, error) {
+func NewTextEncoderByConfig(cfg *Config) zapcore.Encoder {
 	cc := zapcore.EncoderConfig{
 		// Keys can be anything except the empty string.
 		TimeKey:        "time",
@@ -162,11 +141,11 @@ func NewTextEncoder(cfg *Config) (zapcore.Encoder, error) {
 			buf:                 _pool.Get(),
 			spaced:              false,
 			disableErrorVerbose: cfg.DisableErrorVerbose,
-		}, nil
+		}
 	case "json":
-		return zapcore.NewJSONEncoder(cc), nil
+		return zapcore.NewJSONEncoder(cc)
 	default:
-		return nil, fmt.Errorf("unsupport log format: %s", cfg.Format)
+		panic(fmt.Sprintf("unsupport log format: %s", cfg.Format))
 	}
 }
 
@@ -299,7 +278,7 @@ func (enc *textEncoder) AppendByteString(val []byte) {
 func (enc *textEncoder) AppendComplex128(val complex128) {
 	enc.addElementSeparator()
 	// Cast to a platform-independent, fixed-size type.
-	r, i := float64(real(val)), float64(imag(val))
+	r, i := real(val), imag(val)
 	enc.buf.AppendFloat(r, 64)
 	enc.buf.AppendByte('+')
 	enc.buf.AppendFloat(i, 64)
@@ -364,28 +343,50 @@ func (enc *textEncoder) AppendUint64(val uint64) {
 }
 
 func (enc *textEncoder) AddComplex64(k string, v complex64) { enc.AddComplex128(k, complex128(v)) }
-func (enc *textEncoder) AddFloat32(k string, v float32)     { enc.AddFloat64(k, float64(v)) }
-func (enc *textEncoder) AddInt(k string, v int)             { enc.AddInt64(k, int64(v)) }
-func (enc *textEncoder) AddInt32(k string, v int32)         { enc.AddInt64(k, int64(v)) }
-func (enc *textEncoder) AddInt16(k string, v int16)         { enc.AddInt64(k, int64(v)) }
-func (enc *textEncoder) AddInt8(k string, v int8)           { enc.AddInt64(k, int64(v)) }
-func (enc *textEncoder) AddUint(k string, v uint)           { enc.AddUint64(k, uint64(v)) }
-func (enc *textEncoder) AddUint32(k string, v uint32)       { enc.AddUint64(k, uint64(v)) }
-func (enc *textEncoder) AddUint16(k string, v uint16)       { enc.AddUint64(k, uint64(v)) }
-func (enc *textEncoder) AddUint8(k string, v uint8)         { enc.AddUint64(k, uint64(v)) }
-func (enc *textEncoder) AddUintptr(k string, v uintptr)     { enc.AddUint64(k, uint64(v)) }
-func (enc *textEncoder) AppendComplex64(v complex64)        { enc.AppendComplex128(complex128(v)) }
-func (enc *textEncoder) AppendFloat64(v float64)            { enc.appendFloat(v, 64) }
-func (enc *textEncoder) AppendFloat32(v float32)            { enc.appendFloat(float64(v), 32) }
-func (enc *textEncoder) AppendInt(v int)                    { enc.AppendInt64(int64(v)) }
-func (enc *textEncoder) AppendInt32(v int32)                { enc.AppendInt64(int64(v)) }
-func (enc *textEncoder) AppendInt16(v int16)                { enc.AppendInt64(int64(v)) }
-func (enc *textEncoder) AppendInt8(v int8)                  { enc.AppendInt64(int64(v)) }
-func (enc *textEncoder) AppendUint(v uint)                  { enc.AppendUint64(uint64(v)) }
-func (enc *textEncoder) AppendUint32(v uint32)              { enc.AppendUint64(uint64(v)) }
-func (enc *textEncoder) AppendUint16(v uint16)              { enc.AppendUint64(uint64(v)) }
-func (enc *textEncoder) AppendUint8(v uint8)                { enc.AppendUint64(uint64(v)) }
-func (enc *textEncoder) AppendUintptr(v uintptr)            { enc.AppendUint64(uint64(v)) }
+
+func (enc *textEncoder) AddFloat32(k string, v float32) { enc.AddFloat64(k, float64(v)) }
+
+func (enc *textEncoder) AddInt(k string, v int) { enc.AddInt64(k, int64(v)) }
+
+func (enc *textEncoder) AddInt32(k string, v int32) { enc.AddInt64(k, int64(v)) }
+
+func (enc *textEncoder) AddInt16(k string, v int16) { enc.AddInt64(k, int64(v)) }
+
+func (enc *textEncoder) AddInt8(k string, v int8) { enc.AddInt64(k, int64(v)) }
+
+func (enc *textEncoder) AddUint(k string, v uint) { enc.AddUint64(k, uint64(v)) }
+
+func (enc *textEncoder) AddUint32(k string, v uint32) { enc.AddUint64(k, uint64(v)) }
+
+func (enc *textEncoder) AddUint16(k string, v uint16) { enc.AddUint64(k, uint64(v)) }
+
+func (enc *textEncoder) AddUint8(k string, v uint8) { enc.AddUint64(k, uint64(v)) }
+
+func (enc *textEncoder) AddUintptr(k string, v uintptr) { enc.AddUint64(k, uint64(v)) }
+
+func (enc *textEncoder) AppendComplex64(v complex64) { enc.AppendComplex128(complex128(v)) }
+
+func (enc *textEncoder) AppendFloat64(v float64) { enc.appendFloat(v, 64) }
+
+func (enc *textEncoder) AppendFloat32(v float32) { enc.appendFloat(float64(v), 32) }
+
+func (enc *textEncoder) AppendInt(v int) { enc.AppendInt64(int64(v)) }
+
+func (enc *textEncoder) AppendInt32(v int32) { enc.AppendInt64(int64(v)) }
+
+func (enc *textEncoder) AppendInt16(v int16) { enc.AppendInt64(int64(v)) }
+
+func (enc *textEncoder) AppendInt8(v int8) { enc.AppendInt64(int64(v)) }
+
+func (enc *textEncoder) AppendUint(v uint) { enc.AppendUint64(uint64(v)) }
+
+func (enc *textEncoder) AppendUint32(v uint32) { enc.AppendUint64(uint64(v)) }
+
+func (enc *textEncoder) AppendUint16(v uint16) { enc.AppendUint64(uint64(v)) }
+
+func (enc *textEncoder) AppendUint8(v uint8) { enc.AppendUint64(uint64(v)) }
+
+func (enc *textEncoder) AppendUintptr(v uintptr) { enc.AppendUint64(uint64(v)) }
 
 func (enc *textEncoder) Clone() zapcore.Encoder {
 	clone := enc.cloned()
@@ -572,7 +573,7 @@ func (enc *textEncoder) safeAddByteString(s []byte) {
 	}
 }
 
-// See [log-fileds](https://github.com/tikv/rfcs/blob/master/text/0018-unified-log-format.md#log-fields-section).
+// See [log-fileds](https://github.com/tikv/rfcs/blob/master/text/2018-12-19-unified-log-format.md#log-fields-section).
 func (enc *textEncoder) needDoubleQuotes(s string) bool {
 	for i := 0; i < len(s); {
 		b := s[i]
@@ -655,7 +656,7 @@ func (enc *textEncoder) encodeError(f zapcore.Field) {
 		verbose := fmt.Sprintf("%+v", e)
 		if verbose != basic {
 			// This is a rich error type, like those produced by
-			// github.com/pkg/errors.
+			// errors.
 			enc.beginQuoteFiled()
 			enc.AddString(f.Key+"Verbose", verbose)
 			enc.endQuoteFiled()

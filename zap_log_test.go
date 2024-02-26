@@ -1,3 +1,19 @@
+// Licensed to the LF AI & Data foundation under one
+// or more contributor license agreements. See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership. The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Copyright 2019 PingCAP, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,8 +40,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/pingcap/errors"
-	"github.com/stretchr/testify/require"
+	"github.com/cockroachdb/errors"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -59,9 +75,7 @@ func TestLog(t *testing.T) {
 		"process keys", 1500,
 	)
 	sugar.Info("Welcome")
-	sugar.Info("Welcome TiDB")
 	sugar.Info("欢迎")
-	sugar.Info("欢迎来到 TiDB")
 	sugar.Warnw("Type",
 		"Counter", math.NaN(),
 		"Score", math.Inf(1),
@@ -99,16 +113,14 @@ func TestLog(t *testing.T) {
 		zap.Duration("duration", 10*time.Second),
 	)
 	ts.assertMessages(
-		`[INFO] [zap_log_test.go:49] ["failed to fetch URL"] [url=http://example.com] [attempt=3] [backoff=1s]`,
-		`[INFO] [zap_log_test.go:54] ["failed to \"fetch\" [URL]: http://example.com"]`,
-		`[DEBUG] [zap_log_test.go:55] ["Slow query"] [sql="SELECT * FROM TABLE\n\tWHERE ID=\"abc\""] [duration=1.3s] ["process keys"=1500]`,
-		`[INFO] [zap_log_test.go:61] [Welcome]`,
-		`[INFO] [zap_log_test.go:62] ["Welcome TiDB"]`,
-		`[INFO] [zap_log_test.go:63] [欢迎]`,
-		`[INFO] [zap_log_test.go:64] ["欢迎来到 TiDB"]`,
-		`[WARN] [zap_log_test.go:65] [Type] [Counter=NaN] [Score=+Inf]`,
-		`[INFO] [zap_log_test.go:70] ["new connection"] [connID=1] [traceID=dse1121]`,
-		`[INFO] [zap_log_test.go:71] ["Testing typs"] [filed1=noquote] `+
+		`[INFO] [log/zap_log_test.go:65] ["failed to fetch URL"] [url=http://example.com] [attempt=3] [backoff=1s]`,
+		`[INFO] [log/zap_log_test.go:70] ["failed to \"fetch\" [URL]: http://example.com"]`,
+		`[DEBUG] [log/zap_log_test.go:71] ["Slow query"] [sql="SELECT * FROM TABLE\n\tWHERE ID=\"abc\""] [duration=1.3s] ["process keys"=1500]`,
+		`[INFO] [log/zap_log_test.go:77] [Welcome]`,
+		`[INFO] [log/zap_log_test.go:78] [欢迎]`,
+		`[WARN] [log/zap_log_test.go:79] [Type] [Counter=NaN] [Score=+Inf]`,
+		`[INFO] [log/zap_log_test.go:84] ["new connection"] [connID=1] [traceID=dse1121]`,
+		`[INFO] [log/zap_log_test.go:85] ["Testing typs"] [filed1=noquote] `+
 			`[filed2="in quote"] [urls="[http://mock1.com:2347,http://mock2.com:2432]"] `+
 			`[urls-peer="[t1,\"t2 fine\"]"] ["store ids"="[1,4,5]"] [object="{username=user1}"] `+
 			`[object2="{username=\"user 2\"}"] [binary="YWIxMjM="] ["is processed"=true] `+
@@ -118,104 +130,52 @@ func TestLog(t *testing.T) {
 			`<car><mirror>XML</mirror></car>]"] [duration=10s]`,
 	)
 
-	require.PanicsWithValue(t, "unknown", func() { sugar.Panic("unknown") })
+	assert.PanicsWithValue(t, "unknown", func() { sugar.Panic("unknown") })
 }
 
 func TestTimeEncoder(t *testing.T) {
 	sec := int64(1547192741)
 	nsec := int64(165279177)
 	as, err := time.LoadLocation("Asia/Shanghai")
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	tt := time.Unix(sec, nsec).In(as)
 	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
-	enc, err := NewTextEncoder(conf)
-	require.NoError(t, err)
-	DefaultTimeEncoder(tt, enc.(*textEncoder))
-	buf := enc.(*textEncoder).buf
-	require.Equal(t, "2019/01/11 15:45:41.165 +08:00", buf.String())
+	enc := NewTextEncoderByConfig(conf).(*textEncoder)
+	DefaultTimeEncoder(tt, enc)
+	assert.Equal(t, "2019/01/11 15:45:41.165 +08:00", enc.buf.String())
 
-	buf.Reset()
+	enc.buf.Reset()
 	utc, err := time.LoadLocation("UTC")
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	utcTime := tt.In(utc)
-	DefaultTimeEncoder(utcTime, enc.(*textEncoder))
-	require.Equal(t, "2019/01/11 07:45:41.165 +00:00", buf.String())
+	DefaultTimeEncoder(utcTime, enc)
+	assert.Equal(t, "2019/01/11 07:45:41.165 +00:00", enc.buf.String())
 }
 
 // See [logger-header]https://github.com/tikv/rfcs/blob/master/text/2018-12-19-unified-log-format.md#log-header-section.
 func TestZapCaller(t *testing.T) {
 	data := []zapcore.EntryCaller{
-		{Defined: true, PC: uintptr(unsafe.Pointer(nil)), File: "server.go", Line: 132},
-		{Defined: true, PC: uintptr(unsafe.Pointer(nil)), File: "server/coordinator.go", Line: 20},
-		{Defined: true, PC: uintptr(unsafe.Pointer(nil)), File: `z\test_coordinator1.go`, Line: 20},
-		{Defined: false, PC: uintptr(unsafe.Pointer(nil)), File: "", Line: 0},
+		/* #nosec G103 */ {Defined: true, PC: uintptr(unsafe.Pointer(nil)), File: "server.go", Line: 132},
+		/* #nosec G103 */ {Defined: true, PC: uintptr(unsafe.Pointer(nil)), File: "server/coordinator.go", Line: 20},
+		/* #nosec G103 */ {Defined: true, PC: uintptr(unsafe.Pointer(nil)), File: `z\test_coordinator1.go`, Line: 20},
+		/* #nosec G103 */ {Defined: false, PC: uintptr(unsafe.Pointer(nil)), File: "", Line: 0},
 	}
 	expect := []string{
 		"server.go:132",
-		"coordinator.go:20",
-		"ztest_coordinator1.go:20",
-		"<unknown>",
+		"server/coordinator.go:20",
+		"\"z\\\\test_coordinator1.go:20\"",
+		"undefined",
 	}
-	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
-	enc, err := NewTextEncoder(conf)
-	require.NoError(t, err)
+	conf := &Config{Level: "deug", File: FileLogConfig{}, DisableTimestamp: true}
+	enc := NewTextEncoderByConfig(conf).(*textEncoder)
 
 	for i, d := range data {
-		ShortCallerEncoder(d, enc.(*textEncoder))
-		buf := enc.(*textEncoder).buf
-		require.Equal(t, expect[i], buf.String())
-		buf.Reset()
+		ShortCallerEncoder(d, enc)
+		assert.Equal(t, expect[i], enc.buf.String())
+		enc.buf.Reset()
 	}
-}
-
-func TestRotateLog(t *testing.T) {
-	tempDir, _ := os.MkdirTemp("/tmp", "pd-tests-log")
-	conf := &Config{
-		Level: "info",
-		File: FileLogConfig{
-			Filename: tempDir + "/test.log",
-			MaxSize:  1,
-		},
-	}
-	logger, _, err := InitLogger(conf)
-	require.NoError(t, err)
-
-	var data []byte
-	for i := 1; i <= 1*1024*1024; i++ {
-		if i%1000 != 0 {
-			data = append(data, 'd')
-			continue
-		}
-		logger.Info(string(data))
-		data = data[:0]
-	}
-	files, _ := os.ReadDir(tempDir)
-	require.Len(t, files, 2)
-	_ = os.RemoveAll(tempDir)
-}
-
-func TestErrorLog(t *testing.T) {
-	ts := newTestLogSpy(t)
-	conf := &Config{Level: "debug", DisableTimestamp: true}
-	logger, _, _ := InitTestLogger(ts, conf)
-	logger.Error("", zap.NamedError("err", errors.New("log-stack-test")))
-	ts.assertMessagesContains("[err=log-stack-test]")
-	ts.assertMessagesContains("] [errVerbose=\"")
-}
-
-func TestWithOptions(t *testing.T) {
-	ts := newTestLogSpy(t)
-	conf := &Config{
-		Level:               "debug",
-		DisableTimestamp:    true,
-		DisableErrorVerbose: true,
-	}
-	logger, _, _ := InitTestLogger(ts, conf, zap.AddStacktrace(zapcore.FatalLevel))
-	logger.Error("Testing", zap.Error(errors.New("log-with-option")))
-	ts.assertMessagesNotContains("errorVerbose")
-	ts.assertMessagesNotContains("stack")
 }
 
 func TestLogJSON(t *testing.T) {
@@ -231,60 +191,80 @@ func TestLogJSON(t *testing.T) {
 		"backoff", time.Second,
 	)
 	logger.With(zap.String("connID", "1"), zap.String("traceID", "dse1121")).Info("new connection")
-	ts.assertMessages("{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:228\",\"message\":\"failed to fetch URL\",\"url\":\"http://example.com\",\"attempt\":3,\"backoff\":\"1s\"}",
-		"{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:233\",\"message\":\"new connection\",\"connID\":\"1\",\"traceID\":\"dse1121\"}")
+	ts.assertMessages("{\"level\":\"INFO\",\"caller\":\"log/zap_log_test.go:188\",\"message\":\"failed to fetch URL\",\"url\":\"http://example.com\",\"attempt\":3,\"backoff\":\"1s\"}",
+		"{\"level\":\"INFO\",\"caller\":\"log/zap_log_test.go:193\",\"message\":\"new connection\",\"connID\":\"1\",\"traceID\":\"dse1121\"}")
 }
 
-func TestRotateLogWithCompress(t *testing.T) {
-	tempDir := t.TempDir()
-	conf := &Config{
-		Level: "info",
-		File: FileLogConfig{
-			Filename: tempDir + "/test.log",
-			MaxSize:  1,
-			Compress: "gzip",
-		},
+func TestRotateLog(t *testing.T) {
+	cases := []struct {
+		desc            string
+		maxSize         int
+		writeSize       int
+		expectedFileNum int
+	}{
+		{"test limited max size", 1, 1 * 1024 * 1024, 2},
 	}
-	logger, _, err := InitLogger(conf)
-	require.NoError(t, err)
-
-	var data []byte
-	for i := 1; i <= 1*1024*1024; i++ {
-		if i%1000 != 0 {
-			data = append(data, 'd')
-			continue
-		}
-		logger.Info(string(data))
-		data = data[:0]
-	}
-	// Waiting rotation finished, it's async
-	for {
-		files, _ := os.ReadDir(tempDir)
-		if len(files) == 2 {
-			for _, f := range files {
-				info, err := f.Info()
-				require.NoError(t, err)
-				// Many duplicate logs, the file size after compress should less than 512KB
-				require.Less(t, info.Size(), int64(512*1024))
+	for _, c := range cases {
+		t.Run(c.desc, func(t *testing.T) {
+			tempDir := t.TempDir()
+			conf := &Config{
+				Level: "info",
+				File: FileLogConfig{
+					Filename: tempDir + "/test.log",
+					MaxSize:  c.maxSize,
+				},
 			}
-			break
-		}
-		time.Sleep(time.Millisecond)
+			logger, _, err := InitLogger(conf)
+			assert.NoError(t, err)
+
+			var data []byte
+			for i := 1; i <= c.writeSize; i++ {
+				if i%1000 != 0 {
+					data = append(data, 'd')
+					continue
+				}
+				logger.Info(string(data))
+				data = data[:0]
+			}
+			files, _ := os.ReadDir(tempDir)
+			assert.Len(t, files, c.expectedFileNum)
+		})
 	}
 }
 
-func TestCompressError(t *testing.T) {
-	tempDir := t.TempDir()
+func TestWithOptions(t *testing.T) {
+	ts := newTestLogSpy(t)
 	conf := &Config{
-		Level: "info",
-		File: FileLogConfig{
-			Filename: tempDir + "/test.log",
-			MaxSize:  1,
-			Compress: "xxx",
-		},
+		Level:               "debug",
+		DisableTimestamp:    true,
+		DisableErrorVerbose: true,
 	}
-	_, _, err := InitLogger(conf)
-	require.Error(t, err)
+	logger, _, _ := InitTestLogger(ts, conf, zap.AddStacktrace(zapcore.FatalLevel))
+	logger.Error("Testing", zap.Error(errors.New("log-with-option")))
+	ts.assertMessagesNotContains("errorVerbose")
+	ts.assertMessagesNotContains("stack")
+}
+
+func TestNamedLogger(t *testing.T) {
+	ts := newTestLogSpy(t)
+	conf := &Config{
+		Level:               "debug",
+		DisableTimestamp:    true,
+		DisableErrorVerbose: true,
+	}
+	logger, _, _ := InitTestLogger(ts, conf, zap.AddStacktrace(zapcore.FatalLevel))
+	namedLogger := logger.Named("testLogger")
+	namedLogger.Error("testing")
+	ts.assertMessagesContains("testLogger")
+}
+
+func TestErrorLog(t *testing.T) {
+	ts := newTestLogSpy(t)
+	conf := &Config{Level: "debug", DisableTimestamp: true}
+	logger, _, _ := InitTestLogger(ts, conf)
+	logger.Error("", zap.NamedError("err", errors.New("log-stack-test")))
+	ts.assertMessagesContains("[err=log-stack-test]")
+	ts.assertMessagesContains("] [errVerbose=\"")
 }
 
 // testLogSpy is a testing.TB that captures logged messages.
@@ -312,6 +292,10 @@ func (t *testLogSpy) FailNow() {
 	t.TB.FailNow()
 }
 
+func (t *testLogSpy) CleanBuffer() {
+	t.Messages = []string{}
+}
+
 func (t *testLogSpy) Logf(format string, args ...interface{}) {
 	// Log messages are in the format,
 	//
@@ -326,29 +310,54 @@ func (t *testLogSpy) Logf(format string, args ...interface{}) {
 }
 
 func (t *testLogSpy) assertMessages(msgs ...string) {
-	require.Equal(t.TB, msgs, t.Messages)
+	assert.Equal(t.TB, msgs, t.Messages)
 }
 
 func (t *testLogSpy) assertMessagesContains(msg string) {
 	for _, actualMsg := range t.Messages {
-		require.Contains(t.TB, actualMsg, msg)
+		assert.Contains(t.TB, actualMsg, msg)
 	}
-}
-
-func (t *testLogSpy) assertLastMessageContains(msg string) {
-	require.NotEmpty(t.TB, t.Messages)
-	lastMsg := t.Messages[len(t.Messages)-1]
-	require.Contains(t.TB, lastMsg, msg)
-}
-
-func (t *testLogSpy) assertLastMessageNotContains(msg string) {
-	require.NotEmpty(t.TB, t.Messages)
-	lastMsg := t.Messages[len(t.Messages)-1]
-	require.NotContains(t.TB, lastMsg, msg)
 }
 
 func (t *testLogSpy) assertMessagesNotContains(msg string) {
 	for _, actualMsg := range t.Messages {
-		require.NotContains(t.TB, actualMsg, msg)
+		assert.NotContains(t.TB, actualMsg, msg)
 	}
+}
+
+func (t *testLogSpy) assertLastMessageContains(msg string) {
+	if len(t.Messages) == 0 {
+		assert.Error(t.TB, fmt.Errorf("empty message"))
+	}
+	assert.Contains(t.TB, t.Messages[len(t.Messages)-1], msg)
+}
+
+func (t *testLogSpy) assertLastMessageNotContains(msg string) {
+	if len(t.Messages) == 0 {
+		assert.Error(t.TB, fmt.Errorf("empty message"))
+	}
+	assert.NotContains(t.TB, t.Messages[len(t.Messages)-1], msg)
+}
+
+func (t *testLogSpy) assertMessageContainAny(msg string) {
+	found := false
+	for _, actualMsg := range t.Messages {
+		if strings.Contains(actualMsg, msg) {
+			found = true
+		}
+	}
+	assert.True(t, found, "can't found any message contain `%s`, all messages: %v", msg, fmtMsgs(t.Messages))
+}
+
+func fmtMsgs(messages []string) string {
+	builder := strings.Builder{}
+	builder.WriteString("[")
+	for i, msg := range messages {
+		if i == len(messages)-1 {
+			builder.WriteString(fmt.Sprintf("`%s]`", msg))
+		} else {
+			builder.WriteString(fmt.Sprintf("`%s`, ", msg))
+		}
+	}
+	return builder.String()
 }

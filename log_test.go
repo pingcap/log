@@ -1,3 +1,19 @@
+// Licensed to the LF AI & Data foundation under one
+// or more contributor license agreements. See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership. The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Copyright 2019 PingCAP, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,10 +33,13 @@ package log
 import (
 	"bufio"
 	"bytes"
-	"net/url"
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -28,62 +47,36 @@ import (
 func TestExport(t *testing.T) {
 	ts := newTestLogSpy(t)
 	conf := &Config{Level: "debug", DisableTimestamp: true}
-	logger, _, _ := InitTestLogger(ts, conf)
+	logger, _, _ := InitTestLogger(ts, conf, zap.AddCallerSkip(1))
 	ReplaceGlobals(logger, nil)
 
 	Info("Testing")
 	Debug("Testing")
 	Warn("Testing")
 	Error("Testing")
+	Sync()
 	ts.assertMessagesContains("log_test.go:")
-	L().Info("Testing")
-	ts.assertMessagesContains("log_test.go:")
-	L().WithOptions(zap.AddCallerSkip(1)).Info("Testing")
-	ts.assertLastMessageNotContains("log_test.go:")
+	logPanic(t)
 
-	ts2 := newTestLogSpy(t)
-	logger2, _, _ := InitTestLogger(ts2, conf)
-	ReplaceGlobals(logger2, nil)
+	ts = newTestLogSpy(t)
+	logger, _, _ = InitTestLogger(ts, conf)
+	ReplaceGlobals(logger, nil)
 
 	newLogger := With(zap.String("name", "tester"), zap.Int64("age", 42))
 	newLogger.Info("hello")
 	newLogger.Debug("world")
-	ts2.assertMessagesContains(`name=tester`)
-	ts2.assertMessagesContains(`age=42`)
-	ts.assertMessagesNotContains(`name=tester`)
+	Sync()
+	ts.assertMessagesContains(`name=tester`)
+	ts.assertMessagesContains(`age=42`)
 }
 
-func TestReplaceGlobals(t *testing.T) {
-	ts := newTestLogSpy(t)
-	conf := &Config{Level: "debug", DisableTimestamp: true}
-	logger, _, _ := InitTestLogger(ts, conf)
-	ReplaceGlobals(logger, nil)
-
-	Info(`foo_1`)
-	ts.assertLastMessageContains(`foo_1`)
-
-	ts2 := newTestLogSpy(t)
-	logger2, _, _ := InitTestLogger(ts2, conf)
-	restoreGlobal := ReplaceGlobals(logger2, nil)
-
-	Info(`foo_2`)
-	ts.assertMessagesNotContains(`foo_2`)
-	ts.assertLastMessageContains(`foo_1`)
-	ts2.assertLastMessageContains(`foo_2`)
-	ts2.assertMessagesNotContains(`foo_1`)
-
-	restoreGlobal()
-	ts.assertMessagesNotContains(`foo_2`)
-	ts.assertLastMessageContains(`foo_1`)
-	ts2.assertLastMessageContains(`foo_2`)
-	ts2.assertMessagesNotContains(`foo_1`)
-
-	Info(`foo_3`)
-	ts.assertMessagesNotContains(`foo_2`)
-	ts.assertLastMessageContains(`foo_3`)
-	ts2.assertLastMessageContains(`foo_2`)
-	ts2.assertMessagesNotContains(`foo_1`)
-	ts2.assertMessagesNotContains(`foo_3`)
+func logPanic(t *testing.T) {
+	defer func() {
+		if err := recover(); err != nil {
+			t.Log("logPanic recover")
+		}
+	}()
+	Panic("Testing")
 }
 
 func TestZapTextEncoder(t *testing.T) {
@@ -91,67 +84,203 @@ func TestZapTextEncoder(t *testing.T) {
 
 	var buffer bytes.Buffer
 	writer := bufio.NewWriter(&buffer)
-	encoder, err := NewTextEncoder(conf)
-	require.NoError(t, err)
+	encoder := NewTextEncoderByConfig(conf)
 	logger := zap.New(zapcore.NewCore(encoder, zapcore.AddSync(writer), zapcore.InfoLevel)).Sugar()
 
 	logger.Info("this is a message from zap")
 	_ = writer.Flush()
-	require.Equal(t, `[INFO] ["this is a message from zap"]`+"\n", buffer.String())
+	assert.Equal(t, `[INFO] ["this is a message from zap"]`+"\n", buffer.String())
 }
 
-func TestRegisteredTextEncoder(t *testing.T) {
-	sink := &testingSink{new(bytes.Buffer)}
-	_ = zap.RegisterSink("memory", func(*url.URL) (zap.Sink, error) {
-		return sink, nil
-	})
-	lgc := zap.NewProductionConfig()
-	lgc.Encoding = ZapEncodingName
-	lgc.OutputPaths = []string{"memory://"}
+func TestInvalidFileConfig(t *testing.T) {
+	tmpDir := t.TempDir()
 
-	lg, err := lgc.Build()
-	require.Nil(t, err)
-
-	lg.Info("this is a message from zap")
-	require.Contains(t, sink.String(), `["this is a message from zap"]`)
-}
-
-// testingSink implements zap.Sink by writing all messages to a buffer.
-type testingSink struct {
-	*bytes.Buffer
-}
-
-// Implement Close and Sync as no-ops to satisfy the interface. The Write
-// method is provided by the embedded buffer.
-func (s *testingSink) Close() error { return nil }
-func (s *testingSink) Sync() error  { return nil }
-
-func TestTimeout(t *testing.T) {
-	sink := &testingSink{new(bytes.Buffer)}
-	ws := LockWithTimeout(sink, 3)
-	ws.Write([]byte("abc"))
-	ws.Sync()
-	require.Contains(t, sink.String(), `abc`)
-
-	var h hang
-	ws = LockWithTimeout(zapcore.AddSync(h), 3)
-	panicCh := make(chan struct{}, 2)
-	for i := 0; i < 2; i++ {
-		go func() {
-			defer func() {
-				if x := recover(); x != nil {
-					panicCh <- struct{}{}
-				}
-			}()
-			ws.Write([]byte("abc")) // This should not make the caller hang
-		}()
+	invalidFileConf := FileLogConfig{
+		Filename: tmpDir,
 	}
-	<-panicCh
+	conf := &Config{Level: "debug", File: invalidFileConf, DisableTimestamp: true}
+
+	_, _, err := InitLogger(conf)
+	assert.Equal(t, "can't use directory as log file name", err.Error())
+
+	// invalid level
+	conf = &Config{Level: "debuge", DisableTimestamp: true}
+	_, _, err = InitLogger(conf)
+	assert.Error(t, err)
 }
 
-type hang struct{}
+func TestLevelGetterAndSetter(t *testing.T) {
+	conf := &Config{Level: "debug", File: FileLogConfig{}, DisableTimestamp: true}
+	logger, p, _ := InitLogger(conf)
+	ReplaceGlobals(logger, p)
 
-func (_ hang) Write(_ []byte) (int, error) {
-	<-make(chan struct{}) // block forever
-	return 0, nil
+	assert.Equal(t, zap.DebugLevel, GetLevel())
+
+	SetLevel(zap.ErrorLevel)
+	assert.Equal(t, zap.ErrorLevel, GetLevel())
+}
+
+func TestSampling(t *testing.T) {
+	sample, drop := make(chan zapcore.SamplingDecision, 1), make(chan zapcore.SamplingDecision, 1)
+	samplingConf := zap.SamplingConfig{
+		Initial:    1,
+		Thereafter: 2,
+		Hook: func(entry zapcore.Entry, decision zapcore.SamplingDecision) {
+			switch decision {
+			case zapcore.LogSampled:
+				sample <- decision
+			case zapcore.LogDropped:
+				drop <- decision
+			}
+		},
+	}
+	conf := &Config{Level: "debug", File: FileLogConfig{}, Sampling: &samplingConf}
+
+	ts := newTestLogSpy(t)
+	logger, p, _ := InitTestLogger(ts, conf)
+	ReplaceGlobals(logger, p)
+
+	for i := 0; i < 10; i++ {
+		Debug("test")
+		if i%2 == 0 {
+			<-sample
+		} else {
+			<-drop
+		}
+	}
+}
+
+func TestRatedLog(t *testing.T) {
+	ts := newTestLogSpy(t)
+	conf := &Config{Level: "debug", DisableTimestamp: true}
+	logger, p, _ := InitTestLogger(ts, conf)
+	ReplaceGlobals(logger, p)
+
+	time.Sleep(time.Duration(1) * time.Second)
+	success := RatedDebug(1.0, "test")
+	assert.True(t, success)
+
+	time.Sleep(time.Duration(1) * time.Second)
+	success = RatedInfo(1.0, "test")
+	assert.True(t, success)
+
+	time.Sleep(time.Duration(1) * time.Second)
+	success = RatedWarn(1.0, "test")
+	assert.True(t, success)
+
+	time.Sleep(time.Duration(1) * time.Second)
+	success = RatedInfo(100.0, "test")
+	assert.False(t, success)
+
+	successNum := 0
+	for i := 0; i < 1000; i++ {
+		if RatedInfo(1.0, "test") {
+			successNum++
+		}
+		time.Sleep(time.Duration(1) * time.Millisecond)
+	}
+	// due to the rate limit, not all
+	assert.True(t, successNum < 1000)
+	assert.True(t, successNum > 10)
+
+	time.Sleep(time.Duration(3) * time.Second)
+	success = RatedInfo(3.0, "test")
+	assert.True(t, success)
+	Sync()
+}
+
+func TestLeveledLogger(t *testing.T) {
+	ts := newTestLogSpy(t)
+	conf := &Config{Level: "debug", DisableTimestamp: true, DisableCaller: true}
+	logger, _, _ := InitTestLogger(ts, conf)
+	replaceLeveledLoggers(logger)
+
+	debugL().Debug("DEBUG LOG")
+	debugL().Info("INFO LOG")
+	debugL().Warn("WARN LOG")
+	debugL().Error("ERROR LOG")
+	Sync()
+
+	ts.assertMessageContainAny(`[DEBUG] ["DEBUG LOG"]`)
+	ts.assertMessageContainAny(`[INFO] ["INFO LOG"]`)
+	ts.assertMessageContainAny(`[WARN] ["WARN LOG"]`)
+	ts.assertMessageContainAny(`[ERROR] ["ERROR LOG"]`)
+
+	ts.CleanBuffer()
+
+	infoL().Debug("DEBUG LOG")
+	infoL().Info("INFO LOG")
+	infoL().Warn("WARN LOG")
+	infoL().Error("ERROR LOG")
+	Sync()
+
+	ts.assertMessagesNotContains(`[DEBUG] ["DEBUG LOG"]`)
+	ts.assertMessageContainAny(`[INFO] ["INFO LOG"]`)
+	ts.assertMessageContainAny(`[WARN] ["WARN LOG"]`)
+	ts.assertMessageContainAny(`[ERROR] ["ERROR LOG"]`)
+	ts.CleanBuffer()
+
+	warnL().Debug("DEBUG LOG")
+	warnL().Info("INFO LOG")
+	warnL().Warn("WARN LOG")
+	warnL().Error("ERROR LOG")
+	Sync()
+
+	ts.assertMessagesNotContains(`[DEBUG] ["DEBUG LOG"]`)
+	ts.assertMessagesNotContains(`[INFO] ["INFO LOG"]`)
+	ts.assertMessageContainAny(`[WARN] ["WARN LOG"]`)
+	ts.assertMessageContainAny(`[ERROR] ["ERROR LOG"]`)
+	ts.CleanBuffer()
+
+	errorL().Debug("DEBUG LOG")
+	errorL().Info("INFO LOG")
+	errorL().Warn("WARN LOG")
+	errorL().Error("ERROR LOG")
+	Sync()
+
+	ts.assertMessagesNotContains(`[DEBUG] ["DEBUG LOG"]`)
+	ts.assertMessagesNotContains(`[INFO] ["INFO LOG"]`)
+	ts.assertMessagesNotContains(`[WARN] ["WARN LOG"]`)
+	ts.assertMessageContainAny(`[ERROR] ["ERROR LOG"]`)
+
+	ts.CleanBuffer()
+
+	ctx := withLogLevel(context.TODO(), zapcore.DPanicLevel)
+	assert.Equal(t, Ctx(ctx).Logger, L())
+
+	// set invalid level
+	orgLevel := GetLevel()
+	SetLevel(zapcore.FatalLevel + 1)
+	assert.Equal(t, ctxL(), L())
+	SetLevel(orgLevel)
+}
+
+func TestStdAndFileLogger(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	fileConf := FileLogConfig{
+		RootPath: tmpDir,
+		Filename: "TestStdAndFileLogger",
+	}
+	t.Log(tmpDir)
+	conf := &Config{Level: "debug", Stdout: true, File: fileConf}
+
+	logger, _, err := InitLogger(conf)
+
+	assert.NoError(t, err)
+	logger.Info("1234567")
+
+	fileInfo, err := os.Stat(fileConf.RootPath + string(filepath.Separator) + fileConf.Filename)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, fileInfo)
+	assert.True(t, fileInfo.Size() > 0)
+}
+
+func TestStdLogger(t *testing.T) {
+	conf := &Config{Level: "debug", Stdout: true}
+
+	logger, _, err := InitLogger(conf)
+
+	assert.NoError(t, err)
+	logger.Info("1234567")
 }
