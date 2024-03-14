@@ -35,9 +35,9 @@ type FileLogConfig struct {
 	MaxDays int `toml:"max-days" json:"max-days"`
 	// Maximum number of old log files to retain.
 	MaxBackups int `toml:"max-backups" json:"max-backups"`
-	// Compress function for rotated files.
+	// Compression function for rotated files.
 	// Currently only `gzip` and empty are supported, empty means compression disabled.
-	Compress string `toml:"compress" json:"compress"`
+	Compression string `toml:"compression" json:"compression"`
 }
 
 // Config serializes log related config in toml/json.

@@ -240,9 +240,9 @@ func TestRotateLogWithCompress(t *testing.T) {
 	conf := &Config{
 		Level: "info",
 		File: FileLogConfig{
-			Filename: tempDir + "/test.log",
-			MaxSize:  1,
-			Compress: "gzip",
+			Filename:    tempDir + "/test.log",
+			MaxSize:     1,
+			Compression: "gzip",
 		},
 	}
 	logger, _, err := InitLogger(conf)
@@ -280,7 +280,7 @@ func TestCompressError(t *testing.T) {
 		File: FileLogConfig{
 			Filename: tempDir + "/test.log",
 			MaxSize:  1,
-			Compress: "xxx",
+			Compression: "xxx",
 		},
 	}
 	_, _, err := InitLogger(conf)
