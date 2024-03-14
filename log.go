@@ -183,13 +183,13 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 	}
 
 	compress := false
-	switch cfg.Compress {
+	switch cfg.Compression {
 	case "":
 		compress = false
 	case "gzip":
 		compress = true
 	default:
-		return nil, fmt.Errorf("can't set compress to `%s`", cfg.Compress)
+		return nil, fmt.Errorf("can't set compression to `%s`", cfg.Compression)
 	}
 
 	// use lumberjack to logrotate
