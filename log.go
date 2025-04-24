@@ -178,7 +178,10 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 		if st.IsDir() {
 			return nil, errors.New("can't use directory as log file name")
 		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
 	}
+
 	if cfg.MaxSize == 0 {
 		cfg.MaxSize = defaultLogMaxSize
 	}
