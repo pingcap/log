@@ -287,6 +287,26 @@ func TestCompressError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestLogFileNoPermission(t *testing.T) {
+	tempDir, _ := os.MkdirTemp("/tmp", "tests-log")
+	defer os.RemoveAll(tempDir)
+	conf := &Config{
+		Level: "info",
+		File: FileLogConfig{
+			Filename: tempDir + "/test.log",
+			MaxSize:  1,
+		},
+	}
+	_, _, err := InitLogger(conf)
+	require.NoError(t, err)
+
+	err = os.Chmod(tempDir, 0)
+	require.NoError(t, err)
+
+	_, _, err = InitLogger(conf)
+	require.Contains(t, err.Error(), "permission denied")
+}
+
 // testLogSpy is a testing.TB that captures logged messages.
 type testLogSpy struct {
 	testing.TB
