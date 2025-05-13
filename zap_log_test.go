@@ -19,6 +19,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -288,23 +289,73 @@ func TestCompressError(t *testing.T) {
 }
 
 func TestLogFileNoPermission(t *testing.T) {
-	tempDir, _ := os.MkdirTemp("/tmp", "tests-log")
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
+
+	// Directory permission denied
+	dirPath := filepath.Join(tempDir, "noperm-dir")
+	require.NoError(t, os.Mkdir(dirPath, 0755))
 	conf := &Config{
 		Level: "info",
 		File: FileLogConfig{
-			Filename: tempDir + "/test.log",
+			Filename: filepath.Join(dirPath, "test.log"),
 			MaxSize:  1,
 		},
 	}
 	_, _, err := InitLogger(conf)
 	require.NoError(t, err)
-
-	err = os.Chmod(tempDir, 0)
-	require.NoError(t, err)
-
+	require.NoError(t, os.Chmod(dirPath, 0))
 	_, _, err = InitLogger(conf)
 	require.Contains(t, err.Error(), "permission denied")
+	require.NoError(t, os.Chmod(dirPath, 0755))
+
+	// Directory exists but doesn't allow file creation
+	readOnlyDirPath := filepath.Join(tempDir, "readonly-dir")
+	require.NoError(t, os.Mkdir(readOnlyDirPath, 0755))
+	require.NoError(t, os.Chmod(readOnlyDirPath, 0555)) // Read-only directory
+	conf = &Config{
+		Level: "info",
+		File: FileLogConfig{
+			Filename: filepath.Join(readOnlyDirPath, "test.log"),
+			MaxSize:  1,
+		},
+	}
+	_, _, err = InitLogger(conf)
+	require.Contains(t, err.Error(), "permission denied")
+	require.NoError(t, os.Chmod(readOnlyDirPath, 0755))
+
+	// Using a directory as log file
+	dirLogPath := filepath.Join(tempDir, "dir-as-log")
+	require.NoError(t, os.Mkdir(dirLogPath, 0755))
+	conf = &Config{
+		Level: "info",
+		File: FileLogConfig{
+			Filename: dirLogPath,
+			MaxSize:  1,
+		},
+	}
+	_, _, err = InitLogger(conf)
+	require.Contains(t, err.Error(), "can't use directory as log file name")
+
+	// File exists but is not writable
+	filePath := filepath.Join(tempDir, "readonly.log")
+	file, err := os.Create(filePath)
+	require.NoError(t, err)
+	file.Close()
+	require.NoError(t, os.Chmod(filePath, 0444))
+
+	// Ensure parent directory is created successfully
+	nestedPath := filepath.Join(tempDir, "nested/path/to")
+	conf = &Config{
+		Level: "info",
+		File: FileLogConfig{
+			Filename: filepath.Join(nestedPath, "test.log"),
+			MaxSize:  1,
+		},
+	}
+	_, _, err = InitLogger(conf)
+	require.NoError(t, err)
+	_, err = os.Stat(nestedPath)
+	require.NoError(t, err)
 }
 
 // testLogSpy is a testing.TB that captures logged messages.
