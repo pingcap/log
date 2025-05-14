@@ -185,7 +185,7 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 	// Create the directory if it doesn't exist
 	dir := filepath.Dir(cfg.Filename)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("cannot create log directory: %v", err)
+		return nil, fmt.Errorf("cannot create log directory: %w", err)
 	}
 
 	// Check if the path is a directory which is invalid
@@ -197,20 +197,20 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 		// Check if the file is writable
 		file, err := os.OpenFile(cfg.Filename, os.O_WRONLY|os.O_APPEND, 0666)
 		if err != nil {
-			return nil, fmt.Errorf("can't write to log file: %v", err)
+			return nil, fmt.Errorf("can't write to log file: %w", err)
 		}
 		file.Close()
 	} else if os.IsNotExist(err) {
 		// File doesn't exist, verify we can create it
 		file, err := os.Create(cfg.Filename)
 		if err != nil {
-			return nil, fmt.Errorf("can't create log file: %v", err)
+			return nil, fmt.Errorf("can't create log file: %w", err)
 		}
 		file.Close()
 		// Remove the empty file since lumberjack will create it
 		os.Remove(cfg.Filename)
 	} else {
-		return nil, fmt.Errorf("error checking log file: %v", err)
+		return nil, fmt.Errorf("error checking log file: %w", err)
 	}
 
 	if cfg.MaxSize == 0 {
