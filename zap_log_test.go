@@ -19,6 +19,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -99,16 +100,16 @@ func TestLog(t *testing.T) {
 		zap.Duration("duration", 10*time.Second),
 	)
 	ts.assertMessages(
-		`[INFO] [zap_log_test.go:49] ["failed to fetch URL"] [url=http://example.com] [attempt=3] [backoff=1s]`,
-		`[INFO] [zap_log_test.go:54] ["failed to \"fetch\" [URL]: http://example.com"]`,
-		`[DEBUG] [zap_log_test.go:55] ["Slow query"] [sql="SELECT * FROM TABLE\n\tWHERE ID=\"abc\""] [duration=1.3s] ["process keys"=1500]`,
-		`[INFO] [zap_log_test.go:61] [Welcome]`,
-		`[INFO] [zap_log_test.go:62] ["Welcome TiDB"]`,
-		`[INFO] [zap_log_test.go:63] [欢迎]`,
-		`[INFO] [zap_log_test.go:64] ["欢迎来到 TiDB"]`,
-		`[WARN] [zap_log_test.go:65] [Type] [Counter=NaN] [Score=+Inf]`,
-		`[INFO] [zap_log_test.go:70] ["new connection"] [connID=1] [traceID=dse1121]`,
-		`[INFO] [zap_log_test.go:71] ["Testing typs"] [filed1=noquote] `+
+		`[INFO] [zap_log_test.go:50] ["failed to fetch URL"] [url=http://example.com] [attempt=3] [backoff=1s]`,
+		`[INFO] [zap_log_test.go:55] ["failed to \"fetch\" [URL]: http://example.com"]`,
+		`[DEBUG] [zap_log_test.go:56] ["Slow query"] [sql="SELECT * FROM TABLE\n\tWHERE ID=\"abc\""] [duration=1.3s] ["process keys"=1500]`,
+		`[INFO] [zap_log_test.go:62] [Welcome]`,
+		`[INFO] [zap_log_test.go:63] ["Welcome TiDB"]`,
+		`[INFO] [zap_log_test.go:64] [欢迎]`,
+		`[INFO] [zap_log_test.go:65] ["欢迎来到 TiDB"]`,
+		`[WARN] [zap_log_test.go:66] [Type] [Counter=NaN] [Score=+Inf]`,
+		`[INFO] [zap_log_test.go:71] ["new connection"] [connID=1] [traceID=dse1121]`,
+		`[INFO] [zap_log_test.go:72] ["Testing typs"] [filed1=noquote] `+
 			`[filed2="in quote"] [urls="[http://mock1.com:2347,http://mock2.com:2432]"] `+
 			`[urls-peer="[t1,\"t2 fine\"]"] ["store ids"="[1,4,5]"] [object="{username=user1}"] `+
 			`[object2="{username=\"user 2\"}"] [binary="YWIxMjM="] ["is processed"=true] `+
@@ -231,8 +232,8 @@ func TestLogJSON(t *testing.T) {
 		"backoff", time.Second,
 	)
 	logger.With(zap.String("connID", "1"), zap.String("traceID", "dse1121")).Info("new connection")
-	ts.assertMessages("{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:228\",\"message\":\"failed to fetch URL\",\"url\":\"http://example.com\",\"attempt\":3,\"backoff\":\"1s\"}",
-		"{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:233\",\"message\":\"new connection\",\"connID\":\"1\",\"traceID\":\"dse1121\"}")
+	ts.assertMessages("{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:229\",\"message\":\"failed to fetch URL\",\"url\":\"http://example.com\",\"attempt\":3,\"backoff\":\"1s\"}",
+		"{\"level\":\"INFO\",\"caller\":\"zap_log_test.go:234\",\"message\":\"new connection\",\"connID\":\"1\",\"traceID\":\"dse1121\"}")
 }
 
 func TestRotateLogWithCompress(t *testing.T) {
@@ -288,23 +289,73 @@ func TestCompressError(t *testing.T) {
 }
 
 func TestLogFileNoPermission(t *testing.T) {
-	tempDir, _ := os.MkdirTemp("/tmp", "tests-log")
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
+
+	// Directory permission denied
+	dirPath := filepath.Join(tempDir, "noperm-dir")
+	require.NoError(t, os.Mkdir(dirPath, 0755))
 	conf := &Config{
 		Level: "info",
 		File: FileLogConfig{
-			Filename: tempDir + "/test.log",
+			Filename: filepath.Join(dirPath, "test.log"),
 			MaxSize:  1,
 		},
 	}
 	_, _, err := InitLogger(conf)
 	require.NoError(t, err)
-
-	err = os.Chmod(tempDir, 0)
-	require.NoError(t, err)
-
+	require.NoError(t, os.Chmod(dirPath, 0))
 	_, _, err = InitLogger(conf)
 	require.Contains(t, err.Error(), "permission denied")
+	require.NoError(t, os.Chmod(dirPath, 0755))
+
+	// Directory exists but doesn't allow file creation
+	readOnlyDirPath := filepath.Join(tempDir, "readonly-dir")
+	require.NoError(t, os.Mkdir(readOnlyDirPath, 0755))
+	require.NoError(t, os.Chmod(readOnlyDirPath, 0555)) // Read-only directory
+	conf = &Config{
+		Level: "info",
+		File: FileLogConfig{
+			Filename: filepath.Join(readOnlyDirPath, "test.log"),
+			MaxSize:  1,
+		},
+	}
+	_, _, err = InitLogger(conf)
+	require.Contains(t, err.Error(), "permission denied")
+	require.NoError(t, os.Chmod(readOnlyDirPath, 0755))
+
+	// Using a directory as log file
+	dirLogPath := filepath.Join(tempDir, "dir-as-log")
+	require.NoError(t, os.Mkdir(dirLogPath, 0755))
+	conf = &Config{
+		Level: "info",
+		File: FileLogConfig{
+			Filename: dirLogPath,
+			MaxSize:  1,
+		},
+	}
+	_, _, err = InitLogger(conf)
+	require.Contains(t, err.Error(), "can't use directory as log file name")
+
+	// File exists but is not writable
+	filePath := filepath.Join(tempDir, "readonly.log")
+	file, err := os.Create(filePath)
+	require.NoError(t, err)
+	file.Close()
+	require.NoError(t, os.Chmod(filePath, 0444))
+
+	// Ensure parent directory is created successfully
+	nestedPath := filepath.Join(tempDir, "nested/path/to")
+	conf = &Config{
+		Level: "info",
+		File: FileLogConfig{
+			Filename: filepath.Join(nestedPath, "test.log"),
+			MaxSize:  1,
+		},
+	}
+	_, _, err = InitLogger(conf)
+	require.NoError(t, err)
+	_, err = os.Stat(nestedPath)
+	require.NoError(t, err)
 }
 
 // testLogSpy is a testing.TB that captures logged messages.

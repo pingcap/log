@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -174,12 +175,42 @@ func (s *lockWithTimeoutWrapper) Sync() error {
 
 // initFileLog initializes file based logging options.
 func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
+	// Verify file permissions early to prevent silent failures.
+	// Since lumberjack creates log files lazily, permission issues wouldn't be detected
+	// until the first write attempt. This is problematic when tools redirect their
+	// error output to these log files.
+	// e.g. dumpling use the log file as ErrorOutputPath, but the log file will not be created
+	// if there has permission issues, and dumpling will not print any error message.
+
+	// Create the directory if it doesn't exist
+	dir := filepath.Dir(cfg.Filename)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("cannot create log directory: %w", err)
+	}
+
+	// Check if the path is a directory which is invalid
 	if st, err := os.Stat(cfg.Filename); err == nil {
 		if st.IsDir() {
 			return nil, errors.New("can't use directory as log file name")
 		}
-	} else if !os.IsNotExist(err) {
-		return nil, err
+
+		// Check if the file is writable
+		file, err := os.OpenFile(cfg.Filename, os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			return nil, fmt.Errorf("can't write to log file: %w", err)
+		}
+		file.Close()
+	} else if os.IsNotExist(err) {
+		// File doesn't exist, verify we can create it
+		file, err := os.Create(cfg.Filename)
+		if err != nil {
+			return nil, fmt.Errorf("can't create log file: %w", err)
+		}
+		file.Close()
+		// Remove the empty file since lumberjack will create it
+		os.Remove(cfg.Filename)
+	} else {
+		return nil, fmt.Errorf("error checking log file: %w", err)
 	}
 
 	if cfg.MaxSize == 0 {
