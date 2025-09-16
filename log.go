@@ -49,7 +49,15 @@ func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, e
 		if err != nil {
 			return nil, nil, err
 		}
-		output = zapcore.AddSync(lg)
+		if cfg.File.IsBuffered {
+			output = &zapcore.BufferedWriteSyncer{
+				WS:            zapcore.AddSync(lg),
+				Size:          cfg.File.BufferSize,
+				FlushInterval: cfg.File.BufferFlushInterval,
+			}
+		} else {
+			output = zapcore.AddSync(lg)
+		}
 	} else {
 		stdOut, _, err := zap.Open([]string{"stdout"}...)
 		if err != nil {
@@ -258,6 +266,8 @@ func S() *zap.SugaredLogger {
 
 // ReplaceGlobals replaces the global Logger and SugaredLogger, and returns a
 // function to restore the original values. It's safe for concurrent use.
+// Be careful when using this with buffered logger, the flush goroutine in
+// https://pkg.go.dev/go.uber.org/zap/zapcore#BufferedWriteSyncer will not be stopped.
 func ReplaceGlobals(logger *zap.Logger, props *ZapProperties) func() {
 	// TODO: This globalMu can be replaced by atomic.Swap(), available since go1.17.
 	globalMu.Lock()
