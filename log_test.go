@@ -136,7 +136,7 @@ func TestTimeout(t *testing.T) {
 	var h hang
 	ws = LockWithTimeout(zapcore.AddSync(h), 3)
 	panicCh := make(chan struct{}, 2)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		go func() {
 			defer func() {
 				if x := recover(); x != nil {

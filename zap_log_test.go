@@ -229,7 +229,7 @@ func TestBufferedLog(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "expected data flushed after interval")
 
 	longMsg := strings.Repeat("x", 200)
-	for i := 0; i < 20; i++ { // Larger than buffer size
+	for range 20 { // Larger than buffer size
 		bufferedLogger.Info("big message", zap.String("msg", longMsg))
 	}
 
@@ -259,7 +259,7 @@ func TestBufferedLogWithRotate(t *testing.T) {
 
 	largeMsg := strings.Repeat("x", 200*1024)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		bufferedLogger.Info("rotating message", zap.String("msg", largeMsg))
 	}
 
@@ -468,7 +468,7 @@ func (t *testLogSpy) FailNow() {
 	t.TB.FailNow()
 }
 
-func (t *testLogSpy) Logf(format string, args ...interface{}) {
+func (t *testLogSpy) Logf(format string, args ...any) {
 	// Log messages are in the format,
 	//
 	//   2017-10-27T13:03:01.000-0700	DEBUG	your message here	{data here}
