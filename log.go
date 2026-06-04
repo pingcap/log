@@ -109,8 +109,8 @@ func InitLoggerWithWriteSyncer(cfg *Config, output, errOutput zapcore.WriteSynce
 		return nil, nil, err
 	}
 	if cfg.Timeout > 0 {
-		output = LockWithTimeout(output, cfg.Timeout)
-		errOutput = LockWithTimeout(errOutput, cfg.Timeout)
+		output = LockWithTimeoutAction(output, cfg.Timeout, cfg.TimeoutAction)
+		errOutput = LockWithTimeoutAction(errOutput, cfg.Timeout, cfg.TimeoutAction)
 	}
 
 	core := NewTextCore(encoder, output, level)
@@ -128,27 +128,55 @@ func InitLoggerWithWriteSyncer(cfg *Config, output, errOutput zapcore.WriteSynce
 // LockWithTimeout wraps a WriteSyncer make it safe for concurrent use, just like zapcore.Lock()
 // timeout seconds.
 func LockWithTimeout(ws zapcore.WriteSyncer, timeout int) zapcore.WriteSyncer {
+	return LockWithTimeoutAction(ws, timeout, LogTimeoutActionPanic)
+}
+
+// LockWithTimeoutAction wraps a WriteSyncer and controls the action when log write/sync is stuck.
+func LockWithTimeoutAction(ws zapcore.WriteSyncer, timeout int, action string) zapcore.WriteSyncer {
 	r := &lockWithTimeoutWrapper{
-		ws:      ws,
-		lock:    make(chan struct{}, 1),
-		t:       time.NewTicker(time.Second),
-		timeout: timeout,
+		ws:            ws,
+		lock:          make(chan struct{}, 1),
+		t:             time.NewTicker(time.Second),
+		timeout:       timeout,
+		timeoutAction: normalizeTimeoutAction(action),
 	}
 	return r
 }
 
 type lockWithTimeoutWrapper struct {
-	ws      zapcore.WriteSyncer
-	lock    chan struct{}
-	t       *time.Ticker
-	timeout int
+	ws            zapcore.WriteSyncer
+	lock          chan struct{}
+	t             *time.Ticker
+	timeout       int
+	timeoutAction string
+	timedOut      atomic.Bool
+}
+
+func normalizeTimeoutAction(action string) string {
+	switch action {
+	case LogTimeoutActionDiscard:
+		return LogTimeoutActionDiscard
+	default:
+		return LogTimeoutActionPanic
+	}
 }
 
 // getLockOrBlock returns true when get lock success, and false otherwise.
 func (s *lockWithTimeoutWrapper) getLockOrBlock() bool {
+	if s.timeoutAction == LogTimeoutActionDiscard && s.timedOut.Load() {
+		select {
+		case s.lock <- struct{}{}:
+			s.timedOut.Store(false)
+			return true
+		default:
+			return false
+		}
+	}
+
 	for i := 0; i < s.timeout; {
 		select {
 		case s.lock <- struct{}{}:
+			s.timedOut.Store(false)
 			return true
 		case <-s.t.C:
 			i++
@@ -164,6 +192,10 @@ func (s *lockWithTimeoutWrapper) unlock() {
 func (s *lockWithTimeoutWrapper) Write(bs []byte) (int, error) {
 	succ := s.getLockOrBlock()
 	if !succ {
+		if s.timeoutAction == LogTimeoutActionDiscard {
+			s.timedOut.Store(true)
+			return len(bs), nil
+		}
 		panic(fmt.Sprintf("Timeout of %ds when trying to write log", s.timeout))
 	}
 	defer s.unlock()
@@ -174,6 +206,10 @@ func (s *lockWithTimeoutWrapper) Write(bs []byte) (int, error) {
 func (s *lockWithTimeoutWrapper) Sync() error {
 	succ := s.getLockOrBlock()
 	if !succ {
+		if s.timeoutAction == LogTimeoutActionDiscard {
+			s.timedOut.Store(true)
+			return nil
+		}
 		panic(fmt.Sprintf("Timeout of %ds when trying to sync log", s.timeout))
 	}
 	defer s.unlock()
