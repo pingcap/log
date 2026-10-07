@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -149,9 +150,64 @@ func TestTimeout(t *testing.T) {
 	<-panicCh
 }
 
+func TestTimeoutActionDiscard(t *testing.T) {
+	blocking := newBlockingOnceWriteSyncer()
+	ws := LockWithTimeoutAction(blocking, 1, LogTimeoutActionDiscard)
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = ws.Write([]byte("first"))
+		close(done)
+	}()
+
+	<-blocking.started
+
+	_, err := ws.Write([]byte("discarded"))
+	require.NoError(t, err)
+
+	start := time.Now()
+	_, err = ws.Write([]byte("discarded-fast"))
+	require.NoError(t, err)
+	require.Less(t, time.Since(start), 500*time.Millisecond)
+
+	close(blocking.release)
+	<-done
+
+	_, err = ws.Write([]byte("written"))
+	require.NoError(t, err)
+	require.Contains(t, blocking.String(), "written")
+}
+
 type hang struct{}
 
 func (_ hang) Write(_ []byte) (int, error) {
 	<-make(chan struct{}) // block forever
 	return 0, nil
+}
+
+type blockingOnceWriteSyncer struct {
+	bytes.Buffer
+	started chan struct{}
+	release chan struct{}
+	writes  int
+}
+
+func newBlockingOnceWriteSyncer() *blockingOnceWriteSyncer {
+	return &blockingOnceWriteSyncer{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+}
+
+func (s *blockingOnceWriteSyncer) Write(bs []byte) (int, error) {
+	s.writes++
+	if s.writes == 1 {
+		close(s.started)
+		<-s.release
+	}
+	return s.Buffer.Write(bs)
+}
+
+func (*blockingOnceWriteSyncer) Sync() error {
+	return nil
 }

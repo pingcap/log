@@ -25,6 +25,13 @@ const (
 	defaultLogMaxSize = 300 // MB
 )
 
+const (
+	// LogTimeoutActionPanic panics when log write/sync is stuck.
+	LogTimeoutActionPanic = "panic"
+	// LogTimeoutActionDiscard discards subsequent log write/sync operations when log write/sync is stuck.
+	LogTimeoutActionDiscard = "discard"
+)
+
 // FileLogConfig serializes file log related config in toml/json.
 type FileLogConfig struct {
 	// Log filename, leave empty to disable file log.
@@ -82,6 +89,9 @@ type Config struct {
 	// Timeout for writing log, if TiDB hang on writing log, make it panic.
 	// The value is seconds, 0 means no timeout
 	Timeout int `toml:"timeout" json:"timeout"`
+	// TimeoutAction controls the action when log write/sync timeout occurs.
+	// Valid values: panic, discard. Empty means panic.
+	TimeoutAction string `toml:"timeout-action" json:"timeout-action"`
 }
 
 // ZapProperties records some information about zap.
