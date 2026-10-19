@@ -136,7 +136,6 @@ func LockWithTimeoutAction(ws zapcore.WriteSyncer, timeout int, action string) z
 	r := &lockWithTimeoutWrapper{
 		ws:            ws,
 		lock:          make(chan struct{}, 1),
-		t:             time.NewTicker(time.Second),
 		timeout:       timeout,
 		timeoutAction: normalizeTimeoutAction(action),
 	}
@@ -146,7 +145,6 @@ func LockWithTimeoutAction(ws zapcore.WriteSyncer, timeout int, action string) z
 type lockWithTimeoutWrapper struct {
 	ws            zapcore.WriteSyncer
 	lock          chan struct{}
-	t             *time.Ticker
 	timeout       int
 	timeoutAction string
 	timedOut      atomic.Bool
@@ -173,16 +171,25 @@ func (s *lockWithTimeoutWrapper) getLockOrBlock() bool {
 		}
 	}
 
-	for i := 0; i < s.timeout; {
-		select {
-		case s.lock <- struct{}{}:
-			s.timedOut.Store(false)
-			return true
-		case <-s.t.C:
-			i++
-		}
+	select {
+	case s.lock <- struct{}{}:
+		s.timedOut.Store(false)
+		return true
+	default:
 	}
-	return false
+
+	// Each caller waits on its own timer. A ticker shared by all waiters would
+	// deliver each tick to only one of them, stretching the wait to roughly
+	// timeout * waiters.
+	timer := time.NewTimer(time.Duration(s.timeout) * time.Second)
+	defer timer.Stop()
+	select {
+	case s.lock <- struct{}{}:
+		s.timedOut.Store(false)
+		return true
+	case <-timer.C:
+		return false
+	}
 }
 
 func (s *lockWithTimeoutWrapper) unlock() {

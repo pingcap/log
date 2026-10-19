@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -176,6 +177,35 @@ func TestTimeoutActionDiscard(t *testing.T) {
 	_, err = ws.Write([]byte("written"))
 	require.NoError(t, err)
 	require.Contains(t, blocking.String(), "written")
+}
+
+func TestTimeoutNotScaledByWaiters(t *testing.T) {
+	const waiters = 8
+	for _, action := range []string{LogTimeoutActionDiscard, LogTimeoutActionPanic} {
+		t.Run(action, func(t *testing.T) {
+			blocking := newBlockingOnceWriteSyncer()
+			ws := LockWithTimeoutAction(blocking, 1, action)
+			go func() { _, _ = ws.Write([]byte("first")) }()
+			<-blocking.started
+
+			// All waiters queue up behind the stuck write at the same time. Each
+			// of them must give up after its own timeout, not after
+			// timeout * waiters.
+			start := time.Now()
+			var wg sync.WaitGroup
+			for range waiters {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					defer func() { _ = recover() }()
+					_, _ = ws.Write([]byte("blocked"))
+				}()
+			}
+			wg.Wait()
+			require.Less(t, time.Since(start), 3*time.Second)
+			close(blocking.release)
+		})
+	}
 }
 
 type hang struct{}
